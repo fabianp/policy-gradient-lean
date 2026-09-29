@@ -17,8 +17,7 @@ With [Elan](https://github.com/leanprover/elan) installed, clone the repository,
 ```bash
 git clone https://github.com/fabianp/policy-gradient-lean.git
 cd policy-gradient-lean
-lake update
-lake exe cache get Mathlib/MeasureTheory/Function/L2Space.lean Mathlib/Tactic.lean
+lake exe cache get Mathlib.MeasureTheory.Function.L2Space Mathlib.Tactic
 lake build
 ```
 

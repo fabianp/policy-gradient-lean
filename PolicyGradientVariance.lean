@@ -34,8 +34,7 @@ The proof establishes the inequalities in this order, with S = ∑ t, Xₜ:
 
 To reproduce the check with Elan installed, run from this directory:
 
-    lake update
-    lake exe cache get Mathlib/MeasureTheory/Function/L2Space.lean Mathlib/Tactic.lean
+    lake exe cache get Mathlib.MeasureTheory.Function.L2Space Mathlib.Tactic
     lake build
 
 The toolchain and Mathlib revision are pinned. The file ends with `#print axioms`
