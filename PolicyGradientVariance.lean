@@ -5,32 +5,32 @@ import Mathlib.Tactic
 # REINFORCE variance bound
 
 Companion to [Policy Gradients Part 1: The REINFORCE Estimator](https://fa.bianp.net/blog/2026/policy-gradient/).
-Scores take values in any real Hilbert space; trajectories live on an arbitrary probability space. The policy-specific
-input is orthogonality in expectation (normally proved from the martingale
-difference property of scores). No independence of rewards and scores is assumed.
 
-The main theorem, `PolicyGradient.reinforce_variance_bound_of_rewards`, proves
+The structure of this file mirrors the proof in the blog post step by step:
 
-    Var((∑ t, rₜ) • (∑ t, Xₜ)) ≤ T³ rmax² C.
+* **Preamble (`eq:var_first_step`)**:
+  `totalVariance_eq` and `totalVariance_le_secondMoment` expand
+  `Var(g) = E[‖g‖²] - ‖E[g]‖² ≤ E[‖g‖²]`.
+* **Step 1️⃣ Uncorrelated per-step scores (`eq:zero_score_mean` – `eq:per_step_decomp`)**:
+  - `cond_inner_eq_zero_of_zero_mean` and `uncorrelated_scores_of_tower` prove that
+    when the action score at step `t'` has zero conditional expectation given the
+    trajectory history (`eq:zero_score_mean`), pulling the earlier score `X_t` (`t < t'`)
+    out of the inner expectation via the tower property yields `E[⟪X_t, X_{t'}⟫] = 0`
+    (`eq:tower_property` and `eq:uncorrelated_scores`).
+  - `orthogonal_of_lt` extends `E[⟪X_t, X_{t'}⟫] = 0` from `t < t'` to all distinct pairs `i ≠ j`.
+  - `score_sum_secondMoment` proves the Pythagorean identity (`eq:per_step_decomp`):
+    `E[‖∑ t, X_t‖²] = ∑ t, E[‖X_t‖²]`.
+* **Step 2️⃣ The return `R(τ)²` scales as `O(T²)` (`eq:return_bound`)**:
+  `return_abs_bound` and `return_sq_bound` prove `|∑ t, r_t| ≤ T rmax` and
+  `(∑ t, r_t)² ≤ T² rmax²` from `|r_t| ≤ rmax`.
+* **Step 3️⃣ Summing over all time steps (`eq:variance_split`)**:
+  `reinforce_variance_bound` and `reinforce_variance_bound_of_rewards` combine Steps 1️⃣ and 2️⃣
+  with the second-moment bound `E[‖X_t‖²] ≤ C` in a `calc` block matching `eq:variance_split`:
 
-Assumptions and scope:
-* Scores take values in any complete real inner product space (including ℝᵈ).
-* Each score is in L² and has second moment at most C.
-* Distinct scores have zero expected inner product.
-* Per-step rewards are measurable and bounded in absolute value by rmax almost
-  surely, with rmax ≥ 0.
-
-The horizon can be zero. Neither independence between rewards and scores nor
-zero mean of the estimator is required. The policy-specific derivation of score
-orthogonality from conditional mean zero is outside this formalization, as are
-the score-function differentiation identity and any Θ(T³) lower bound.
-
-The proof establishes the inequalities in this order, with S = ∑ t, Xₜ:
-
-    Var(R • S) ≤ E[‖R • S‖²]
-               ≤ (T rmax)² E[‖S‖²]
-               = (T rmax)² ∑ t, E[‖Xₜ‖²]
-               ≤ T³ rmax² C.
+      Var((∑ t, r_t) • (∑ t, X_t)) ≤ E[‖R • S‖²]
+                                   ≤ T² rmax² E[‖S‖²]
+                                   = T² rmax² ∑ t, E[‖X_t‖²]
+                                   ≤ T³ rmax² C.
 
 To reproduce the check with Elan installed, run from this directory:
 
@@ -51,11 +51,14 @@ variable {Ω E : Type*} [MeasurableSpace Ω]
   [NormedAddCommGroup E] [InnerProductSpace ℝ E] [CompleteSpace E]
   {μ : Measure Ω} [IsProbabilityMeasure μ]
 
-/-- Total (trace) variance of a vector-valued random variable. -/
+/-! ### Preamble: Variance decomposition (`eq:var_first_step`) -/
+
+/-- Total (trace) variance of a vector-valued random variable: `Var(g) = E[‖g - E[g]‖²]`. -/
 def totalVariance (μ : Measure Ω) (g : Ω → E) : ℝ :=
   ∫ ω, ‖g ω - ∫ z, g z ∂μ‖ ^ 2 ∂μ
 
-/-- Expand total variance into a second moment minus the squared mean. -/
+/-- Expand total variance into a second moment minus the squared mean:
+`Var(g) = E[‖g‖²] - ‖E[g]‖²`. -/
 lemma totalVariance_eq {g : Ω → E} (hg : MemLp g 2 μ) :
     totalVariance μ g = (∫ ω, ‖g ω‖ ^ 2 ∂μ) - ‖∫ ω, g ω ∂μ‖ ^ 2 := by
   have hi : Integrable g μ := hg.integrable (by norm_num)
@@ -74,11 +77,53 @@ lemma totalVariance_eq {g : Ω → E} (hg : MemLp g 2 μ) :
   simp
   ring
 
-omit [CompleteSpace E] [IsProbabilityMeasure μ] in
-/-- Orthogonal score increments make the second moment of their sum additive.
+/-- Dropping the non-negative squared mean `‖E[g]‖²` upper-bounds variance by the second moment
+(Equation `eq:var_first_step` in the blog post). -/
+lemma totalVariance_le_secondMoment {g : Ω → E} (hg : MemLp g 2 μ) :
+    totalVariance μ g ≤ ∫ ω, ‖g ω‖ ^ 2 ∂μ := by
+  rw [totalVariance_eq hg]
+  exact sub_le_self _ (sq_nonneg _)
 
-The hypothesis `horth` is the formal version of the zero cross-term property
-used for policy-gradient scores. -/
+/-! ### Step 1️⃣: Uncorrelated per-step scores (`eq:zero_score_mean` – `eq:per_step_decomp`) -/
+
+/-- Inner expectation in `eq:uncorrelated_scores`: conditioned on the history up to state `s_{t'}`,
+the earlier score `x = X_t` (`t < t'`) is fixed and pulls out of the action expectation, so a
+zero-mean action score (`eq:zero_score_mean`) makes the conditional inner product vanish. -/
+lemma cond_inner_eq_zero_of_zero_mean {A : Type*} [MeasurableSpace A] (π : Measure A)
+    (x : E) {Y : A → E} (hY : Integrable Y π) (hzero : (∫ a, Y a ∂π) = 0) :
+    (∫ a, ⟪x, Y a⟫_ℝ ∂π) = 0 := by
+  rw [integral_inner hY, hzero, inner_zero_right]
+
+/-- Full tower-property derivation of `eq:uncorrelated_scores`: if the expectation of `⟪X_t, X_{t'}⟫`
+factors via the law of total expectation (`eq:tower_property`) into an outer expectation over the
+trajectory history `h : H` and an inner conditional expectation over the action `a : A` drawn from
+the policy `π h`, and the conditional score mean vanishes (`eq:zero_score_mean`), then
+`E[⟪X_t, X_{t'}⟫] = 0`. -/
+lemma uncorrelated_scores_of_tower {H A : Type*} [MeasurableSpace H] [MeasurableSpace A]
+    (ν : Measure H) (π : H → Measure A) (Xt : H → E) (Xt' : H → A → E)
+    (hY : ∀ h, Integrable (Xt' h) (π h))
+    (hzero : ∀ h, (∫ a, Xt' h a ∂(π h)) = 0) :
+    (∫ h, (∫ a, ⟪Xt h, Xt' h a⟫_ℝ ∂(π h)) ∂ν) = 0 := by
+  simp_rw [ fun h => cond_inner_eq_zero_of_zero_mean (π h) (Xt h) (hY h) (hzero h),
+    integral_zero]
+
+omit [CompleteSpace E] [IsProbabilityMeasure μ] in
+/-- Symmetry extends `E[⟪X_t, X_{t'}⟫] = 0` from ordered pairs `t < t'` (`eq:uncorrelated_scores`)
+to all distinct step pairs `i ≠ j`. -/
+lemma orthogonal_of_lt {T : ℕ} (X : Fin T → Ω → E)
+    (hlt : ∀ i j : Fin T, i < j → (∫ ω, ⟪X i ω, X j ω⟫_ℝ ∂μ) = 0) :
+    ∀ i j : Fin T, i ≠ j → (∫ ω, ⟪X i ω, X j ω⟫_ℝ ∂μ) = 0 := by
+  intro i j hij
+  rcases lt_or_gt_of_ne hij with h | h
+  · exact hlt i j h
+  · calc
+      (∫ ω, ⟪X i ω, X j ω⟫_ℝ ∂μ) = ∫ ω, ⟪X j ω, X i ω⟫_ℝ ∂μ :=
+        integral_congr_ae (Eventually.of_forall fun ω => real_inner_comm _ _)
+      _ = 0 := hlt j i h
+
+omit [CompleteSpace E] [IsProbabilityMeasure μ] in
+/-- Equation `eq:per_step_decomp`: uncorrelated score increments (`E[⟪X_i, X_j⟫] = 0` for `i ≠ j`)
+make the second moment of the score sum equal the sum of per-step second moments. -/
 lemma score_sum_secondMoment {T : ℕ} (X : Fin T → Ω → E)
     (hX : ∀ t, MemLp (X t) 2 μ)
     (horth : ∀ i j, i ≠ j → (∫ ω, ⟪X i ω, X j ω⟫_ℝ ∂μ) = 0) :
@@ -98,11 +143,29 @@ lemma score_sum_secondMoment {T : ℕ} (X : Fin T → Ω → E)
   exact Finset.sum_eq_single i (fun j _ hji => horth i j hji.symm)
     (by simp)
 
-/-- Bound the variance of `R • ∑ t, X t` when the total return is bounded.
+/-! ### Step 2️⃣: The return `R(τ)²` scales as `O(T²)` (`eq:return_bound`) -/
 
-This is the core analytic estimate. The reward structure is intentionally
-abstracted away: only measurability and the almost-everywhere bound on `R` are
-needed here. -/
+/-- By the triangle inequality, bounding each per-step reward `|r_t| ≤ rmax` bounds the total
+return `|R(τ)| = |∑ t, r_t| ≤ T rmax`. -/
+lemma return_abs_bound {T : ℕ} (r : Fin T → ℝ) (rmax : ℝ)
+    (hr : ∀ t, |r t| ≤ rmax) : |∑ t, r t| ≤ (T : ℝ) * rmax := by
+  calc
+    |∑ t, r t| ≤ ∑ t, |r t| := Finset.abs_sum_le_sum_abs _ _
+    _ ≤ (T : ℝ) * rmax := by
+      simpa using Finset.sum_le_sum (s := Finset.univ) (fun t _ => hr t)
+
+/-- Squaring `return_abs_bound` gives Equation `eq:return_bound`:
+`R(τ)² = (∑ t, r_t)² ≤ T² rmax²`. -/
+lemma return_sq_bound {T : ℕ} (r : Fin T → ℝ) (rmax : ℝ)
+    (hr : ∀ t, |r t| ≤ rmax) : (∑ t, r t) ^ 2 ≤ (T : ℝ) ^ 2 * rmax ^ 2 := by
+  have habs := return_abs_bound r rmax hr
+  have hpow := pow_le_pow_left₀ (abs_nonneg (∑ t, r t)) habs 2
+  nlinarith [sq_abs (∑ t, r t)]
+
+/-! ### Step 3️⃣: Summing over all time steps (`eq:variance_split`) -/
+
+/-- Core analytic estimate corresponding to Equation `eq:variance_split` in the blog post.
+The `calc` block mirrors the four steps of `eq:variance_split` line for line. -/
 theorem reinforce_variance_bound {T : ℕ} (X : Fin T → Ω → E) (R : Ω → ℝ)
     (rmax C : ℝ) (_hrmax : 0 ≤ rmax)
     (hX : ∀ t, MemLp (X t) 2 μ)
@@ -126,9 +189,8 @@ theorem reinforce_variance_bound {T : ℕ} (X : Fin T → Ω → E) (R : Ω → 
       (pow_le_pow_left₀ (abs_nonneg _) hω 2) (sq_nonneg _)
   calc
     totalVariance μ (fun ω => R ω • ∑ t, X t ω)
-        ≤ ∫ ω, ‖R ω • S ω‖ ^ 2 ∂μ := by
-          rw [totalVariance_eq hg]
-          exact sub_le_self _ (sq_nonneg _)
+        ≤ ∫ ω, ‖R ω • S ω‖ ^ 2 ∂μ :=
+          totalVariance_le_secondMoment hg
     _ ≤ ∫ ω, ((T : ℝ) * rmax) ^ 2 * ‖S ω‖ ^ 2 ∂μ :=
       integral_mono_ae hg.norm.integrable_sq
         (hS.norm.integrable_sq.const_mul _) hpoint
@@ -139,17 +201,9 @@ theorem reinforce_variance_bound {T : ℕ} (X : Fin T → Ω → E) (R : Ω → 
       simpa using Finset.sum_le_sum (s := Finset.univ) (fun t _ => hsecond t)
     _ = (T : ℝ) ^ 3 * rmax ^ 2 * C := by ring
 
-/-- The triangle inequality turns per-step reward bounds into a return bound. -/
-lemma return_abs_bound {T : ℕ} (r : Fin T → ℝ) (rmax : ℝ)
-    (hr : ∀ t, |r t| ≤ rmax) : |∑ t, r t| ≤ (T : ℝ) * rmax := by
-  calc
-    |∑ t, r t| ≤ ∑ t, |r t| := Finset.abs_sum_le_sum_abs _ _
-    _ ≤ (T : ℝ) * rmax := by
-      simpa using Finset.sum_le_sum (s := Finset.univ) (fun t _ => hr t)
-
-/-- The theorem stated in the article, with the return written as a reward sum.
-
-This combines `return_abs_bound` with `reinforce_variance_bound`. -/
+/-- The main theorem stated in the blog post (`eq:variance_bound`), combining Step 1️⃣
+(`orthogonal_of_lt` + `score_sum_secondMoment`), Step 2️⃣ (`return_abs_bound`), and Step 3️⃣
+(`reinforce_variance_bound`). -/
 theorem reinforce_variance_bound_of_rewards {T : ℕ}
     (X : Fin T → Ω → E) (r : Fin T → Ω → ℝ) (rmax C : ℝ)
     (hrmax : 0 ≤ rmax) (hX : ∀ t, MemLp (X t) 2 μ)
