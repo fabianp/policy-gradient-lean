@@ -6,8 +6,15 @@ import Mathlib.Tactic
 
 Companion to [Policy Gradients Part 1: The REINFORCE Estimator](https://fa.bianp.net/blog/2026/policy-gradient/).
 
-The structure of this file mirrors the proof in the blog post step by step:
+The structure of this file mirrors the definitions and proof in the blog post step by step:
 
+* **Definitions (`eq:reinforce`)**:
+  - `trajectoryReturn r ω = ∑ t, r_t(ω)` is the total scalar return `R(τ) ∈ ℝ`.
+  - `scoreSum X ω = ∑ t, X_t(ω)` is the sum of per-step score vectors `S(τ) ∈ E`.
+  - `reinforceEstimator X r ω = ∑ t, trajectoryReturn r ω • X_t(ω)` is the REINFORCE gradient
+    estimator `ĝ(τ)` (where `•` denotes scalar multiplication of a real scalar in `ℝ` by a
+    vector in `E`), and `reinforceEstimator_eq_smul_scoreSum` factors the scalar return out of
+    the sum: `ĝ(τ) = R(τ) • S(τ)`.
 * **Preamble (`eq:var_first_step`)**:
   `totalVariance_eq` and `totalVariance_le_secondMoment` expand
   `Var(g) = E[‖g‖²] - ‖E[g]‖² ≤ E[‖g‖²]`.
@@ -19,18 +26,18 @@ The structure of this file mirrors the proof in the blog post step by step:
     (`eq:tower_property` and `eq:uncorrelated_scores`).
   - `orthogonal_of_lt` extends `E[⟪X_t, X_{t'}⟫] = 0` from `t < t'` to all distinct pairs `i ≠ j`.
   - `score_sum_secondMoment` proves the Pythagorean identity (`eq:per_step_decomp`):
-    `E[‖∑ t, X_t‖²] = ∑ t, E[‖X_t‖²]`.
+    `E[‖scoreSum X‖²] = ∑ t, E[‖X_t‖²]`.
 * **Step 2️⃣ The return `R(τ)²` scales as `O(T²)` (`eq:return_bound`)**:
-  `return_abs_bound` and `return_sq_bound` prove `|∑ t, r_t| ≤ T rmax` and
-  `(∑ t, r_t)² ≤ T² rmax²` from `|r_t| ≤ rmax`.
+  `return_abs_bound` and `return_sq_bound` prove `|R(τ)| ≤ T rmax` and
+  `R(τ)² ≤ T² rmax²` from `|r_t| ≤ rmax`.
 * **Step 3️⃣ Summing over all time steps (`eq:variance_split`)**:
   `reinforce_variance_bound` and `reinforce_variance_bound_of_rewards` combine Steps 1️⃣ and 2️⃣
   with the second-moment bound `E[‖X_t‖²] ≤ C` in a `calc` block matching `eq:variance_split`:
 
-      Var((∑ t, r_t) • (∑ t, X_t)) ≤ E[‖R • S‖²]
-                                   ≤ T² rmax² E[‖S‖²]
-                                   = T² rmax² ∑ t, E[‖X_t‖²]
-                                   ≤ T³ rmax² C.
+      totalVariance μ (reinforceEstimator X r) ≤ E[‖R • S‖²]
+                                               ≤ T² rmax² E[‖S‖²]
+                                               = T² rmax² ∑ t, E[‖X_t‖²]
+                                               ≤ T³ rmax² C.
 
 To reproduce the check with Elan installed, run from this directory:
 
@@ -50,6 +57,28 @@ namespace PolicyGradient
 variable {Ω E : Type*} [MeasurableSpace Ω]
   [NormedAddCommGroup E] [InnerProductSpace ℝ E] [CompleteSpace E]
   {μ : Measure Ω} [IsProbabilityMeasure μ]
+
+/-! ### Definitions: Return, score sum, and REINFORCE estimator (`eq:reinforce`) -/
+
+/-- Total trajectory return `R(τ) = ∑ t, r_t(τ)` (a real scalar). -/
+def trajectoryReturn {T : ℕ} (r : Fin T → Ω → ℝ) (ω : Ω) : ℝ :=
+  ∑ t, r t ω
+
+/-- Sum of per-step score vectors `S(τ) = ∑ t, X_t(τ)`, where `X_t = ∇_θ log π_θ(a_t | s_t)`. -/
+def scoreSum {T : ℕ} (X : Fin T → Ω → E) (ω : Ω) : E :=
+  ∑ t, X t ω
+
+/-- The REINFORCE gradient estimator `ĝ(τ) = ∑ t, R(τ) • X_t(τ)` (`eq:reinforce`), written as a sum
+of per-step gradient contributions. Here `•` denotes scalar multiplication (`ℝ` acting on `E`). -/
+def reinforceEstimator {T : ℕ} (X : Fin T → Ω → E) (r : Fin T → Ω → ℝ) (ω : Ω) : E :=
+  ∑ t, trajectoryReturn r ω • X t ω
+
+omit [MeasurableSpace Ω] [CompleteSpace E] in
+/-- Factor the scalar return `R(τ)` out of the sum over time steps:
+`ĝ(τ) = ∑ t, R(τ) • X_t(τ) = R(τ) • S(τ)`. -/
+lemma reinforceEstimator_eq_smul_scoreSum {T : ℕ} (X : Fin T → Ω → E) (r : Fin T → Ω → ℝ) (ω : Ω) :
+    reinforceEstimator X r ω = trajectoryReturn r ω • scoreSum X ω := by
+  simp [reinforceEstimator, scoreSum, Finset.smul_sum]
 
 /-! ### Preamble: Variance decomposition (`eq:var_first_step`) -/
 
@@ -104,7 +133,7 @@ lemma uncorrelated_scores_of_tower {H A : Type*} [MeasurableSpace H] [Measurable
     (hY : ∀ h, Integrable (Xt' h) (π h))
     (hzero : ∀ h, (∫ a, Xt' h a ∂(π h)) = 0) :
     (∫ h, (∫ a, ⟪Xt h, Xt' h a⟫_ℝ ∂(π h)) ∂ν) = 0 := by
-  simp_rw [ fun h => cond_inner_eq_zero_of_zero_mean (π h) (Xt h) (hY h) (hzero h),
+  simp_rw [fun h => cond_inner_eq_zero_of_zero_mean (π h) (Xt h) (hY h) (hzero h),
     integral_zero]
 
 omit [CompleteSpace E] [IsProbabilityMeasure μ] in
@@ -123,11 +152,11 @@ lemma orthogonal_of_lt {T : ℕ} (X : Fin T → Ω → E)
 
 omit [CompleteSpace E] [IsProbabilityMeasure μ] in
 /-- Equation `eq:per_step_decomp`: uncorrelated score increments (`E[⟪X_i, X_j⟫] = 0` for `i ≠ j`)
-make the second moment of the score sum equal the sum of per-step second moments. -/
+make the second moment of `scoreSum X` equal the sum of per-step second moments. -/
 lemma score_sum_secondMoment {T : ℕ} (X : Fin T → Ω → E)
     (hX : ∀ t, MemLp (X t) 2 μ)
     (horth : ∀ i j, i ≠ j → (∫ ω, ⟪X i ω, X j ω⟫_ℝ ∂μ) = 0) :
-    (∫ ω, ‖∑ t, X t ω‖ ^ 2 ∂μ) = ∑ t, ∫ ω, ‖X t ω‖ ^ 2 ∂μ := by
+    (∫ ω, ‖scoreSum X ω‖ ^ 2 ∂μ) = ∑ t, ∫ ω, ‖X t ω‖ ^ 2 ∂μ := by
   have hint (i j : Fin T) : Integrable (fun ω => ⟪X i ω, X j ω⟫_ℝ) μ := by
     apply ((hX i).norm.integrable_sq.add (hX j).norm.integrable_sq).mono'
       ((hX i).aestronglyMeasurable.inner (hX j).aestronglyMeasurable)
@@ -135,6 +164,7 @@ lemma score_sum_secondMoment {T : ℕ} (X : Fin T → Ω → E)
     change ‖⟪X i ω, X j ω⟫_ℝ‖ ≤ ‖X i ω‖ ^ 2 + ‖X j ω‖ ^ 2
     have hb := norm_inner_le_norm (𝕜 := ℝ) (X i ω) (X j ω)
     nlinarith [sq_nonneg (‖X i ω‖ - ‖X j ω‖)]
+  simp only [scoreSum]
   simp_rw [← real_inner_self_eq_norm_sq, sum_inner, inner_sum]
   rw [integral_finsetSum _ (fun i _ => integrable_finsetSum _ (fun j _ => hint i j))]
   apply Finset.sum_congr rfl
@@ -173,8 +203,8 @@ theorem reinforce_variance_bound {T : ℕ} (X : Fin T → Ω → E) (R : Ω → 
     (hsecond : ∀ t, (∫ ω, ‖X t ω‖ ^ 2 ∂μ) ≤ C)
     (hR : AEStronglyMeasurable R μ)
     (hbound : ∀ᵐ ω ∂μ, |R ω| ≤ (T : ℝ) * rmax) :
-    totalVariance μ (fun ω => R ω • ∑ t, X t ω) ≤ (T : ℝ) ^ 3 * rmax ^ 2 * C := by
-  let S : Ω → E := fun ω => ∑ t, X t ω
+    totalVariance μ (fun ω => R ω • scoreSum X ω) ≤ (T : ℝ) ^ 3 * rmax ^ 2 * C := by
+  let S : Ω → E := scoreSum X
   have hS : MemLp S 2 μ := memLp_finsetSum _ (fun t _ => hX t)
   have hg : MemLp (fun ω => R ω • S ω) 2 μ := by
     apply hS.of_le_mul (hR.smul hS.aestronglyMeasurable)
@@ -188,7 +218,7 @@ theorem reinforce_variance_bound {T : ℕ} (X : Fin T → Ω → E) (R : Ω → 
     exact mul_le_mul_of_nonneg_right
       (pow_le_pow_left₀ (abs_nonneg _) hω 2) (sq_nonneg _)
   calc
-    totalVariance μ (fun ω => R ω • ∑ t, X t ω)
+    totalVariance μ (fun ω => R ω • scoreSum X ω)
         ≤ ∫ ω, ‖R ω • S ω‖ ^ 2 ∂μ :=
           totalVariance_le_secondMoment hg
     _ ≤ ∫ ω, ((T : ℝ) * rmax) ^ 2 * ‖S ω‖ ^ 2 ∂μ :=
@@ -201,9 +231,9 @@ theorem reinforce_variance_bound {T : ℕ} (X : Fin T → Ω → E) (R : Ω → 
       simpa using Finset.sum_le_sum (s := Finset.univ) (fun t _ => hsecond t)
     _ = (T : ℝ) ^ 3 * rmax ^ 2 * C := by ring
 
-/-- The main theorem stated in the blog post (`eq:variance_bound`), combining Step 1️⃣
-(`orthogonal_of_lt` + `score_sum_secondMoment`), Step 2️⃣ (`return_abs_bound`), and Step 3️⃣
-(`reinforce_variance_bound`). -/
+/-- The main theorem stated in the blog post (`eq:variance_bound`), bounding the total variance of
+the REINFORCE estimator `reinforceEstimator X r`:
+`Var(ĝ) ≤ T³ rmax² C`. -/
 theorem reinforce_variance_bound_of_rewards {T : ℕ}
     (X : Fin T → Ω → E) (r : Fin T → Ω → ℝ) (rmax C : ℝ)
     (hrmax : 0 ≤ rmax) (hX : ∀ t, MemLp (X t) 2 μ)
@@ -211,10 +241,12 @@ theorem reinforce_variance_bound_of_rewards {T : ℕ}
     (hsecond : ∀ t, (∫ ω, ‖X t ω‖ ^ 2 ∂μ) ≤ C)
     (hrmeas : ∀ t, AEStronglyMeasurable (r t) μ)
     (hr : ∀ᵐ ω ∂μ, ∀ t, |r t ω| ≤ rmax) :
-    totalVariance μ (fun ω => (∑ t, r t ω) • ∑ t, X t ω)
+    totalVariance μ (reinforceEstimator X r)
       ≤ (T : ℝ) ^ 3 * rmax ^ 2 * C := by
-  apply reinforce_variance_bound X _ rmax C hrmax hX horth hsecond
-    (by fun_prop)
+  rw [show reinforceEstimator X r = fun ω => trajectoryReturn r ω • scoreSum X ω from
+    funext (reinforceEstimator_eq_smul_scoreSum X r)]
+  apply reinforce_variance_bound X (trajectoryReturn r) rmax C hrmax hX horth hsecond
+    (by unfold trajectoryReturn; fun_prop)
   filter_upwards [hr] with ω hω
   exact return_abs_bound (fun t => r t ω) rmax hω
 
