@@ -55,8 +55,8 @@ noncomputable section
 namespace PolicyGradient
 
 /-- Lightweight expectation notations wrapping Bochner integration `∫ ω, ... ∂μ`. -/
-local notation "𝔼[" μ "; " f "]" => ∫ ω, f ω ∂μ
-local macro "𝔼[" x:ident " ∂" μ:term ", " e:term "]" : term => `(integral $μ (fun $x => $e))
+scoped notation "𝔼[" μ "; " f "]" => ∫ ω, f ω ∂μ
+scoped macro "𝔼[" x:ident " ∂" μ:term ", " e:term "]" : term => `(integral $μ (fun $x => $e))
 
 variable {Ω E : Type*} [MeasurableSpace Ω]
   [NormedAddCommGroup E] [InnerProductSpace ℝ E] [CompleteSpace E]

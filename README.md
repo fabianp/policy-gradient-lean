@@ -10,7 +10,7 @@ Companion Lean 4 formalizations for the [*Policy Gradients* blog series](https:/
 
   under square-integrable scores $X_t$ with second moment bounded by $C$, zero expected cross inner products ($\mathbb{E}[\langle X_i, X_j \rangle] = 0$ for $i \ne j$), and almost-surely bounded per-step rewards $|r_t| \le r_{\max}$.
 
-### Correspondence with the Blog Post
+### Correspondence with Part 1
 
 | Blog Post Step | Equation | Lean Declaration |
 | :--- | :--- | :--- |
@@ -20,6 +20,21 @@ Companion Lean 4 formalizations for the [*Policy Gradients* blog series](https:/
 | **Step 1️⃣**: Pythagorean identity for the score sum | $\mathbb{E}\!\left[\left\|S(\tau)\right\|^2\right] = \sum_t \mathbb{E}[\|X_t\|^2]$ | `score_sum_secondMoment` |
 | **Step 2️⃣**: Return bound $\mathcal{O}(T^2)$ | $\lvert R(\tau) \rvert \le T r_{\max}$, $R(\tau)^2 \le T^2 r_{\max}^2$ | `return_abs_bound`, `return_sq_bound` |
 | **Step 3️⃣**: Summing over all time steps | $\mathrm{Var}(\hat{g}) \le T^3 r_{\max}^2 C$ | `reinforce_variance_bound`, `reinforce_variance_bound_of_rewards` |
+
+- **[`PolicyGradientBaselines.lean`](PolicyGradientBaselines.lean)** — Companion to [Policy Gradients Part 2: Baselines](https://fa.bianp.net/blog/2026/policy-gradient-baselines/). Imports `PolicyGradientVariance` and formalizes control variates, state-dependent baselines, and the $\mathcal{O}(T^2)$ variance upper bound (`PolicyGradient.baseline_variance_bound_of_return_variance`) for the baseline policy gradient estimator $\hat{g}_b(\tau) = \sum_{t=0}^{T-1} (G_t - b(s_t))\, X_t$ (`baselineEstimator X G b`):
+
+  $$\mathrm{Var}(\hat{g}_b) \le T^2 K_r C, \quad K_r = r_{\max}^2 + \frac{2 M \rho}{1 - \rho}$$
+
+### Correspondence with Part 2
+
+| Blog Post Step | Equation | Lean Declaration |
+| :--- | :--- | :--- |
+| **Control Variates**: Unbiasedness & variance identity | $\mathbb{E}[Y - Z] = \mathbb{E}[Y]$, $\mathrm{Var}(Y - Z) = \mathrm{Var}(Y) + \mathrm{Var}(Z) - 2\,\mathrm{Cov}(Y, Z)$ | `totalCovariance`, `controlVariate_unbiased`, `totalVariance_sub` |
+| **Baselines**: Reward-to-go, baseline estimator, & zero mean | $G_t = \sum_{k \ge t} r_k$, $\hat{g}_b(\tau) = \sum_t (G_t - b_t)\, X_t$, $\mathbb{E}[b(s_t)\, X_t \mid s_t] = 0$ | `rewardToGo`, `baselineStep`, `baselineEstimator`, `baseline_cond_zero_mean` |
+| **Expected Return Baseline**: Optimal constant baseline | $\mathbb{E}[\|G - \mathbb{E}[G]\|^2] \le \mathbb{E}[\|G - c\|^2]$ | `mse_eq_variance_add_sq`, `expected_return_minimizes_mse` |
+| **Step 1️⃣**: Bounded centered return variance | $\sum_{d=1}^n \rho^d \le \frac{\rho}{1 - \rho}$, $\mathrm{Var}(G_t \mid s_t) \le (T - t) K_r$ | `rewardVarianceConst`, `geom_sum_Ico_le`, `return_variance_bound_of_mixing` |
+| **Step 2️⃣**: Per-step second moment bound | $\mathbb{E}[\|Y_t\|^2] \le (T - t) K_r C$ | `baselineStep_secondMoment_bound` |
+| **Step 3️⃣**: Summing over all time steps | $\sum_{t=0}^{T-1} (T - t) = \frac{T(T+1)}{2} \le T^2$, $\mathrm{Var}(\hat{g}_b) \le T^2 K_r C$ | `sum_range_sub_eq`, `sum_horizon_remaining_le_sq`, `baseline_variance_bound`, `baseline_variance_bound_of_return_variance` |
 
 ## Reproducing & Checking the Proofs
 

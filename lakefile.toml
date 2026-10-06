@@ -1,9 +1,12 @@
 name = "policy_gradient_variance"
 version = "0.1.0"
-defaultTargets = ["PolicyGradientVariance"]
+defaultTargets = ["PolicyGradientVariance", "PolicyGradientBaselines"]
 
 [[lean_lib]]
 name = "PolicyGradientVariance"
+
+[[lean_lib]]
+name = "PolicyGradientBaselines"
 
 [[require]]
 name = "mathlib"
