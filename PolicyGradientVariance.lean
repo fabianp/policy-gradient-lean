@@ -54,6 +54,10 @@ open scoped BigOperators ENNReal InnerProductSpace
 noncomputable section
 namespace PolicyGradient
 
+/-- Lightweight expectation notations wrapping Bochner integration `∫ ω, ... ∂μ`. -/
+local notation "𝔼[" μ "; " f "]" => ∫ ω, f ω ∂μ
+local macro "𝔼[" x:ident " ∂" μ:term ", " e:term "]" : term => `(integral $μ (fun $x => $e))
+
 variable {Ω E : Type*} [MeasurableSpace Ω]
   [NormedAddCommGroup E] [InnerProductSpace ℝ E] [CompleteSpace E]
   {μ : Measure Ω} [IsProbabilityMeasure μ]
@@ -84,22 +88,22 @@ lemma reinforceEstimator_eq_smul_scoreSum {T : ℕ} (X : Fin T → Ω → E) (r 
 
 /-- Total (trace) variance of a vector-valued random variable: `Var(g) = E[‖g - E[g]‖²]`. -/
 def totalVariance (μ : Measure Ω) (g : Ω → E) : ℝ :=
-  ∫ ω, ‖g ω - ∫ z, g z ∂μ‖ ^ 2 ∂μ
+  𝔼[ω ∂μ, ‖g ω - 𝔼[μ; g]‖ ^ 2]
 
 /-- Expand total variance into a second moment minus the squared mean:
 `Var(g) = E[‖g‖²] - ‖E[g]‖²`. -/
 lemma totalVariance_eq {g : Ω → E} (hg : MemLp g 2 μ) :
-    totalVariance μ g = (∫ ω, ‖g ω‖ ^ 2 ∂μ) - ‖∫ ω, g ω ∂μ‖ ^ 2 := by
+    totalVariance μ g = 𝔼[ω ∂μ, ‖g ω‖ ^ 2] - ‖𝔼[μ; g]‖ ^ 2 := by
   have hi : Integrable g μ := hg.integrable (by norm_num)
   have hs := hg.norm.integrable_sq
-  have hc := (hi.inner_const (𝕜 := ℝ) (∫ ω, g ω ∂μ)).const_mul (2 : ℝ)
+  have hc := (hi.inner_const (𝕜 := ℝ) 𝔼[μ; g]).const_mul (2 : ℝ)
   unfold totalVariance
   simp_rw [norm_sub_sq_real]
   rw [integral_add (hs.sub' hc) (integrable_const _), integral_sub hs hc,
     integral_const_mul]
-  have hm : (∫ ω, ⟪g ω, ∫ z, g z ∂μ⟫_ℝ ∂μ) = ‖∫ z, g z ∂μ‖ ^ 2 := by
+  have hm : 𝔼[ω ∂μ, ⟪g ω, 𝔼[μ; g]⟫_ℝ] = ‖𝔼[μ; g]‖ ^ 2 := by
     calc
-      _ = ∫ ω, ⟪∫ z, g z ∂μ, g ω⟫_ℝ ∂μ :=
+      _ = 𝔼[ω ∂μ, ⟪𝔼[μ; g], g ω⟫_ℝ] :=
         integral_congr_ae (Eventually.of_forall fun ω => real_inner_comm _ _)
       _ = _ := by rw [integral_inner hi, real_inner_self_eq_norm_sq]
   rw [hm]
@@ -109,7 +113,7 @@ lemma totalVariance_eq {g : Ω → E} (hg : MemLp g 2 μ) :
 /-- Dropping the non-negative squared mean `‖E[g]‖²` upper-bounds variance by the second moment
 (Equation `eq:var_first_step` in the blog post). -/
 lemma totalVariance_le_secondMoment {g : Ω → E} (hg : MemLp g 2 μ) :
-    totalVariance μ g ≤ ∫ ω, ‖g ω‖ ^ 2 ∂μ := by
+    totalVariance μ g ≤ 𝔼[ω ∂μ, ‖g ω‖ ^ 2] := by
   rw [totalVariance_eq hg]
   exact sub_le_self _ (sq_nonneg _)
 
@@ -119,8 +123,8 @@ lemma totalVariance_le_secondMoment {g : Ω → E} (hg : MemLp g 2 μ) :
 the earlier score `x = X_t` (`t < t'`) is fixed and pulls out of the action expectation, so a
 zero-mean action score (`eq:zero_score_mean`) makes the conditional inner product vanish. -/
 lemma cond_inner_eq_zero_of_zero_mean {A : Type*} [MeasurableSpace A] (π : Measure A)
-    (x : E) {Y : A → E} (hY : Integrable Y π) (hzero : (∫ a, Y a ∂π) = 0) :
-    (∫ a, ⟪x, Y a⟫_ℝ ∂π) = 0 := by
+    (x : E) {Y : A → E} (hY : Integrable Y π) (hzero : 𝔼[π; Y] = 0) :
+    𝔼[a ∂π, ⟪x, Y a⟫_ℝ] = 0 := by
   rw [integral_inner hY, hzero, inner_zero_right]
 
 /-- Full tower-property derivation of `eq:uncorrelated_scores`: if the expectation of `⟪X_t, X_{t'}⟫`
@@ -131,8 +135,8 @@ the policy `π h`, and the conditional score mean vanishes (`eq:zero_score_mean`
 lemma uncorrelated_scores_of_tower {H A : Type*} [MeasurableSpace H] [MeasurableSpace A]
     (ν : Measure H) (π : H → Measure A) (Xt : H → E) (Xt' : H → A → E)
     (hY : ∀ h, Integrable (Xt' h) (π h))
-    (hzero : ∀ h, (∫ a, Xt' h a ∂(π h)) = 0) :
-    (∫ h, (∫ a, ⟪Xt h, Xt' h a⟫_ℝ ∂(π h)) ∂ν) = 0 := by
+    (hzero : ∀ h, 𝔼[π h; Xt' h] = 0) :
+    𝔼[h ∂ν, 𝔼[a ∂(π h), ⟪Xt h, Xt' h a⟫_ℝ]] = 0 := by
   simp_rw [fun h => cond_inner_eq_zero_of_zero_mean (π h) (Xt h) (hY h) (hzero h),
     integral_zero]
 
@@ -140,13 +144,13 @@ omit [CompleteSpace E] [IsProbabilityMeasure μ] in
 /-- Symmetry extends `E[⟪X_t, X_{t'}⟫] = 0` from ordered pairs `t < t'` (`eq:uncorrelated_scores`)
 to all distinct step pairs `i ≠ j`. -/
 lemma orthogonal_of_lt {T : ℕ} (X : Fin T → Ω → E)
-    (hlt : ∀ i j : Fin T, i < j → (∫ ω, ⟪X i ω, X j ω⟫_ℝ ∂μ) = 0) :
-    ∀ i j : Fin T, i ≠ j → (∫ ω, ⟪X i ω, X j ω⟫_ℝ ∂μ) = 0 := by
+    (hlt : ∀ i j : Fin T, i < j → 𝔼[ω ∂μ, ⟪X i ω, X j ω⟫_ℝ] = 0) :
+    ∀ i j : Fin T, i ≠ j → 𝔼[ω ∂μ, ⟪X i ω, X j ω⟫_ℝ] = 0 := by
   intro i j hij
   rcases lt_or_gt_of_ne hij with h | h
   · exact hlt i j h
   · calc
-      (∫ ω, ⟪X i ω, X j ω⟫_ℝ ∂μ) = ∫ ω, ⟪X j ω, X i ω⟫_ℝ ∂μ :=
+      𝔼[ω ∂μ, ⟪X i ω, X j ω⟫_ℝ] = 𝔼[ω ∂μ, ⟪X j ω, X i ω⟫_ℝ] :=
         integral_congr_ae (Eventually.of_forall fun ω => real_inner_comm _ _)
       _ = 0 := hlt j i h
 
@@ -155,8 +159,8 @@ omit [CompleteSpace E] [IsProbabilityMeasure μ] in
 make the second moment of `scoreSum X` equal the sum of per-step second moments. -/
 lemma score_sum_secondMoment {T : ℕ} (X : Fin T → Ω → E)
     (hX : ∀ t, MemLp (X t) 2 μ)
-    (horth : ∀ i j, i ≠ j → (∫ ω, ⟪X i ω, X j ω⟫_ℝ ∂μ) = 0) :
-    (∫ ω, ‖scoreSum X ω‖ ^ 2 ∂μ) = ∑ t, ∫ ω, ‖X t ω‖ ^ 2 ∂μ := by
+    (horth : ∀ i j, i ≠ j → 𝔼[ω ∂μ, ⟪X i ω, X j ω⟫_ℝ] = 0) :
+    𝔼[ω ∂μ, ‖scoreSum X ω‖ ^ 2] = ∑ t, 𝔼[ω ∂μ, ‖X t ω‖ ^ 2] := by
   have hint (i j : Fin T) : Integrable (fun ω => ⟪X i ω, X j ω⟫_ℝ) μ := by
     apply ((hX i).norm.integrable_sq.add (hX j).norm.integrable_sq).mono'
       ((hX i).aestronglyMeasurable.inner (hX j).aestronglyMeasurable)
@@ -199,8 +203,8 @@ The `calc` block mirrors the four steps of `eq:variance_split` line for line. -/
 theorem reinforce_variance_bound {T : ℕ} (X : Fin T → Ω → E) (R : Ω → ℝ)
     (rmax C : ℝ) (_hrmax : 0 ≤ rmax)
     (hX : ∀ t, MemLp (X t) 2 μ)
-    (horth : ∀ i j, i ≠ j → (∫ ω, ⟪X i ω, X j ω⟫_ℝ ∂μ) = 0)
-    (hsecond : ∀ t, (∫ ω, ‖X t ω‖ ^ 2 ∂μ) ≤ C)
+    (horth : ∀ i j, i ≠ j → 𝔼[ω ∂μ, ⟪X i ω, X j ω⟫_ℝ] = 0)
+    (hsecond : ∀ t, 𝔼[ω ∂μ, ‖X t ω‖ ^ 2] ≤ C)
     (hR : AEStronglyMeasurable R μ)
     (hbound : ∀ᵐ ω ∂μ, |R ω| ≤ (T : ℝ) * rmax) :
     totalVariance μ (fun ω => R ω • scoreSum X ω) ≤ (T : ℝ) ^ 3 * rmax ^ 2 * C := by
@@ -219,12 +223,12 @@ theorem reinforce_variance_bound {T : ℕ} (X : Fin T → Ω → E) (R : Ω → 
       (pow_le_pow_left₀ (abs_nonneg _) hω 2) (sq_nonneg _)
   calc
     totalVariance μ (fun ω => R ω • scoreSum X ω)
-        ≤ ∫ ω, ‖R ω • S ω‖ ^ 2 ∂μ :=
+        ≤ 𝔼[ω ∂μ, ‖R ω • S ω‖ ^ 2] :=
           totalVariance_le_secondMoment hg
-    _ ≤ ∫ ω, ((T : ℝ) * rmax) ^ 2 * ‖S ω‖ ^ 2 ∂μ :=
+    _ ≤ 𝔼[ω ∂μ, ((T : ℝ) * rmax) ^ 2 * ‖S ω‖ ^ 2] :=
       integral_mono_ae hg.norm.integrable_sq
         (hS.norm.integrable_sq.const_mul _) hpoint
-    _ = ((T : ℝ) * rmax) ^ 2 * ∑ t, ∫ ω, ‖X t ω‖ ^ 2 ∂μ := by
+    _ = ((T : ℝ) * rmax) ^ 2 * ∑ t, 𝔼[ω ∂μ, ‖X t ω‖ ^ 2] := by
       rw [integral_const_mul, score_sum_secondMoment X hX horth]
     _ ≤ ((T : ℝ) * rmax) ^ 2 * ((T : ℝ) * C) := by
       apply mul_le_mul_of_nonneg_left _ (sq_nonneg _)
@@ -237,8 +241,8 @@ the REINFORCE estimator `reinforceEstimator X r`:
 theorem reinforce_variance_bound_of_rewards {T : ℕ}
     (X : Fin T → Ω → E) (r : Fin T → Ω → ℝ) (rmax C : ℝ)
     (hrmax : 0 ≤ rmax) (hX : ∀ t, MemLp (X t) 2 μ)
-    (horth : ∀ i j, i ≠ j → (∫ ω, ⟪X i ω, X j ω⟫_ℝ ∂μ) = 0)
-    (hsecond : ∀ t, (∫ ω, ‖X t ω‖ ^ 2 ∂μ) ≤ C)
+    (horth : ∀ i j, i ≠ j → 𝔼[ω ∂μ, ⟪X i ω, X j ω⟫_ℝ] = 0)
+    (hsecond : ∀ t, 𝔼[ω ∂μ, ‖X t ω‖ ^ 2] ≤ C)
     (hrmeas : ∀ t, AEStronglyMeasurable (r t) μ)
     (hr : ∀ᵐ ω ∂μ, ∀ t, |r t ω| ≤ rmax) :
     totalVariance μ (reinforceEstimator X r)
