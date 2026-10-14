@@ -14,9 +14,10 @@ Companion Lean 4 formalizations for the [*Policy Gradients* blog series](https:/
 
 | Blog Post Step | Equation | Lean Declaration |
 | :--- | :--- | :--- |
-| **Definitions**: Return, score sum, & REINFORCE estimator | $R(\tau) = \sum_t r_t$, $S(\tau) = \sum_t X_t$, $\hat{g}(\tau) = \sum_t R(\tau)\, X_t = R(\tau)\, S(\tau)$ | `trajectoryReturn`, `scoreSum`, `reinforceEstimator`, `reinforceEstimator_eq_smul_scoreSum` |
+| **Definitions**: Return, score sum, & REINFORCE estimator | $R(\tau) = \sum_t r_t$, $S(\tau) = \sum_t X_t$, $\hat{g}(\tau) = \sum_t R(\tau)\, X_t = R(\tau)\, S(\tau)$ | `trajectoryReturn`, `scoreSum`, `policyScore`, `reinforceEstimator`, `reinforceEstimator_eq_smul_scoreSum` |
 | **Preamble**: Variance decomposition | $\mathrm{Var}(\hat{g}) = \mathbb{E}[\|\hat{g}\|^2] - \|\mathbb{E}[\hat{g}]\|^2 \le \mathbb{E}[\|\hat{g}\|^2]$ | `totalVariance_eq`, `totalVariance_le_secondMoment` |
-| **Step 1️⃣**: Zero conditional score mean $\implies$ uncorrelated scores | $\mathbb{E}[X_t^\top X_{t'}] = \mathbb{E}[X_t^\top \mathbb{E}[X_{t'} \mid s_{t'}]] = 0$ | `cond_inner_eq_zero_of_zero_mean`, `uncorrelated_scores_of_tower`, `orthogonal_of_lt` |
+| **Step 1️⃣**: Zero conditional score mean | $\sum_a \pi_\theta(a \mid s_t) \nabla_\theta \log \pi_\theta(a \mid s_t) = \nabla_\theta \sum_a \pi_\theta(a \mid s_t) = 0$ | `policy_grad_sum_eq_zero`, `finite_policy_score_zero_mean` |
+| **Step 1️⃣**: Tower property $\implies$ uncorrelated scores | $\mathbb{E}[X_t^\top X_{t'}] = \mathbb{E}[X_t^\top \mathbb{E}[X_{t'} \mid s_{t'}]] = 0$ | `tower_property`, `orthogonal_of_lt`, `orthogonal_scores_of_finite_policy` |
 | **Step 1️⃣**: Pythagorean identity for the score sum | $\mathbb{E}\!\left[\left\|S(\tau)\right\|^2\right] = \sum_t \mathbb{E}[\|X_t\|^2]$ | `score_sum_secondMoment` |
 | **Step 2️⃣**: Return bound $\mathcal{O}(T^2)$ | $\lvert R(\tau) \rvert \le T r_{\max}$, $R(\tau)^2 \le T^2 r_{\max}^2$ | `return_abs_bound`, `return_sq_bound` |
 | **Step 3️⃣**: Summing over all time steps | $\mathrm{Var}(\hat{g}) \le T^3 r_{\max}^2 C$ | `reinforce_variance_bound`, `reinforce_variance_bound_of_rewards` |

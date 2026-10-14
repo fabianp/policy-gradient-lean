@@ -18,8 +18,8 @@ The structure mirrors the definitions and derivations in Part 2 step by step:
   - `totalVariance_sub` proves the control-variate variance identity (`eq:cv_variance`):
     `Var(Y - Z) = Var(Y) + Var(Z) - 2 Cov(Y, Z)`.
 * **Baselines as Control Variates & Expected Return Baselines (`eq:pg_raw_estimator` – `eq:expected_return_baseline`)**:
-  - `rewardToGo r t ω = ∑ k ∈ Finset.Ici t, r k ω` is the reward-to-go `G_t`.
-  - `baselineStep X G b t ω = (G_t(ω) - b_t(ω)) • X_t(ω)` is the centered per-step gradient
+  - `rewardToGo r t τ = ∑ k ∈ Finset.Ici t, r k τ` is the reward-to-go `G_t`.
+  - `baselineStep X G b t τ = (G_t(τ) - b_t(τ)) • X_t(τ)` is the centered per-step gradient
     contribution `Y_t`, and `baselineEstimator X G b = scoreSum (baselineStep X G b)` is `ĝ_b(τ)`
     (`eq:baseline_estimator`).
   - `baseline_cond_zero_mean` proves that scaling a zero-mean score by a state-dependent scalar
@@ -58,44 +58,44 @@ variable {Ω E : Type*} [MeasurableSpace Ω]
 /-- Total (inner-product) covariance between two vector-valued random variables:
 `Cov(Y, Z) = 𝔼[⟪Y - 𝔼[Y], Z - 𝔼[Z]⟫]`. -/
 def totalCovariance (μ : Measure Ω) (Y Z : Ω → E) : ℝ :=
-  𝔼[ω ∂μ, ⟪Y ω - 𝔼[μ; Y], Z ω - 𝔼[μ; Z]⟫_ℝ]
+  𝔼[τ ∂μ, ⟪Y τ - 𝔼[μ; Y], Z τ - 𝔼[μ; Z]⟫_ℝ]
 
 omit [CompleteSpace E] [IsProbabilityMeasure μ] in
 /-- Subtracting a zero-mean control variate `Z` leaves the expected value unchanged (`eq:generic_cv`):
 `𝔼[Y - Z] = 𝔼[Y]`. -/
 lemma controlVariate_unbiased {Y Z : Ω → E} (hY : Integrable Y μ) (hZ : Integrable Z μ)
     (hZ0 : 𝔼[μ; Z] = 0) :
-    𝔼[ω ∂μ, Y ω - Z ω] = 𝔼[μ; Y] := by
+    𝔼[τ ∂μ, Y τ - Z τ] = 𝔼[μ; Y] := by
   rw [integral_sub hY hZ, hZ0, sub_zero]
 
 omit [CompleteSpace E] in
 /-- Control-variate variance decomposition (`eq:cv_variance`):
 `Var(Y - Z) = Var(Y) + Var(Z) - 2 Cov(Y, Z)`. -/
 lemma totalVariance_sub {Y Z : Ω → E} (hY : MemLp Y 2 μ) (hZ : MemLp Z 2 μ) :
-    totalVariance μ (fun ω => Y ω - Z ω) =
+    totalVariance μ (fun τ => Y τ - Z τ) =
       totalVariance μ Y + totalVariance μ Z - 2 * totalCovariance μ Y Z := by
   have hiY : Integrable Y μ := hY.integrable (by norm_num)
   have hiZ : Integrable Z μ := hZ.integrable (by norm_num)
-  let Yc : Ω → E := fun ω => Y ω - 𝔼[μ; Y]
-  let Zc : Ω → E := fun ω => Z ω - 𝔼[μ; Z]
+  let Yc : Ω → E := fun τ => Y τ - 𝔼[μ; Y]
+  let Zc : Ω → E := fun τ => Z τ - 𝔼[μ; Z]
   have hYc : MemLp Yc 2 μ := hY.sub (memLp_const _)
   have hZc : MemLp Zc 2 μ := hZ.sub (memLp_const _)
-  have hYc_sq : Integrable (fun ω => ‖Yc ω‖ ^ 2) μ := hYc.norm.integrable_sq
-  have hZc_sq : Integrable (fun ω => ‖Zc ω‖ ^ 2) μ := hZc.norm.integrable_sq
-  have hYZ : Integrable (fun ω => ⟪Yc ω, Zc ω⟫_ℝ) μ := by
+  have hYc_sq : Integrable (fun τ => ‖Yc τ‖ ^ 2) μ := hYc.norm.integrable_sq
+  have hZc_sq : Integrable (fun τ => ‖Zc τ‖ ^ 2) μ := hZc.norm.integrable_sq
+  have hYZ : Integrable (fun τ => ⟪Yc τ, Zc τ⟫_ℝ) μ := by
     apply (hYc_sq.add hZc_sq).mono' (hYc.aestronglyMeasurable.inner hZc.aestronglyMeasurable)
-    filter_upwards [] with ω
-    change ‖⟪Yc ω, Zc ω⟫_ℝ‖ ≤ ‖Yc ω‖ ^ 2 + ‖Zc ω‖ ^ 2
-    have hb := norm_inner_le_norm (𝕜 := ℝ) (Yc ω) (Zc ω)
-    nlinarith [sq_nonneg (‖Yc ω‖ - ‖Zc ω‖)]
-  have h2YZ : Integrable (fun ω => 2 * ⟪Yc ω, Zc ω⟫_ℝ) μ := hYZ.const_mul 2
+    filter_upwards [] with τ
+    change ‖⟪Yc τ, Zc τ⟫_ℝ‖ ≤ ‖Yc τ‖ ^ 2 + ‖Zc τ‖ ^ 2
+    have hb := norm_inner_le_norm (𝕜 := ℝ) (Yc τ) (Zc τ)
+    nlinarith [sq_nonneg (‖Yc τ‖ - ‖Zc τ‖)]
+  have h2YZ : Integrable (fun τ => 2 * ⟪Yc τ, Zc τ⟫_ℝ) μ := hYZ.const_mul 2
   unfold totalVariance totalCovariance
-  have hmean : 𝔼[ω ∂μ, Y ω - Z ω] = 𝔼[μ; Y] - 𝔼[μ; Z] := integral_sub hiY hiZ
-  have hpoint : ∀ ω, ‖(Y ω - Z ω) - 𝔼[z ∂μ, Y z - Z z]‖ ^ 2 =
-      ‖Yc ω‖ ^ 2 - 2 * ⟪Yc ω, Zc ω⟫_ℝ + ‖Zc ω‖ ^ 2 := by
-    intro ω
+  have hmean : 𝔼[τ ∂μ, Y τ - Z τ] = 𝔼[μ; Y] - 𝔼[μ; Z] := integral_sub hiY hiZ
+  have hpoint : ∀ τ, ‖(Y τ - Z τ) - 𝔼[z ∂μ, Y z - Z z]‖ ^ 2 =
+      ‖Yc τ‖ ^ 2 - 2 * ⟪Yc τ, Zc τ⟫_ℝ + ‖Zc τ‖ ^ 2 := by
+    intro τ
     rw [hmean, sub_sub_sub_comm]
-    exact norm_sub_sq_real (Yc ω) (Zc ω)
+    exact norm_sub_sq_real (Yc τ) (Zc τ)
   simp_rw [hpoint]
   rw [integral_add (hYc_sq.sub' h2YZ) hZc_sq, integral_sub hYc_sq h2YZ, integral_const_mul]
   ring
@@ -103,17 +103,17 @@ lemma totalVariance_sub {Y Z : Ω → E} (hY : MemLp Y 2 μ) (hZ : MemLp Z 2 μ)
 /-! ### Baselines as Control Variates & Expected Return (`eq:pg_raw_estimator` – `eq:expected_return_baseline`) -/
 
 /-- Reward-to-go from step `t` onwards (`eq:pg_raw_estimator`): `G_t(τ) = ∑_{k ≥ t} r_k(τ)`. -/
-def rewardToGo {T : ℕ} (r : Fin T → Ω → ℝ) (t : Fin T) (ω : Ω) : ℝ :=
-  ∑ k ∈ Finset.Ici t, r k ω
+def rewardToGo {T : ℕ} (r : Fin T → Ω → ℝ) (t : Fin T) (τ : Ω) : ℝ :=
+  ∑ k ∈ Finset.Ici t, r k τ
 
 /-- Centered per-step policy gradient contribution `Y_t(τ) = (G_t(τ) - b_t(τ)) • X_t(τ)`. -/
-def baselineStep {T : ℕ} (X : Fin T → Ω → E) (G b : Fin T → Ω → ℝ) (t : Fin T) (ω : Ω) : E :=
-  (G t ω - b t ω) • X t ω
+def baselineStep {T : ℕ} (X : Fin T → Ω → E) (G b : Fin T → Ω → ℝ) (t : Fin T) (τ : Ω) : E :=
+  (G t τ - b t τ) • X t τ
 
 /-- The policy gradient baseline estimator (`eq:baseline_estimator`):
 `ĝ_b(τ) = ∑ t, (G_t(τ) - b_t(τ)) • X_t(τ)`, defined via `scoreSum` from Part 1. -/
-def baselineEstimator {T : ℕ} (X : Fin T → Ω → E) (G b : Fin T → Ω → ℝ) (ω : Ω) : E :=
-  scoreSum (baselineStep X G b) ω
+def baselineEstimator {T : ℕ} (X : Fin T → Ω → E) (G b : Fin T → Ω → ℝ) (τ : Ω) : E :=
+  scoreSum (baselineStep X G b) τ
 
 omit [MeasurableSpace Ω] [CompleteSpace E] [IsProbabilityMeasure μ] in
 /-- Because the score `X` has zero conditional expectation given `s_t` (`eq:score_zero_mean_conditional`),
@@ -127,13 +127,13 @@ lemma baseline_cond_zero_mean {A : Type*} [MeasurableSpace A] (π : Measure A)
 /-- Bias-variance decomposition of the mean squared error around an arbitrary constant `c`:
 `𝔼[‖G - c‖²] = Var(G) + ‖𝔼[G] - c‖²`. Reuses `totalVariance_eq` from Part 1. -/
 lemma mse_eq_variance_add_sq {G : Ω → E} (hG : MemLp G 2 μ) (c : E) :
-    𝔼[ω ∂μ, ‖G ω - c‖ ^ 2] = totalVariance μ G + ‖𝔼[μ; G] - c‖ ^ 2 := by
-  have hGc : MemLp (fun ω => G ω - c) 2 μ := hG.sub (memLp_const c)
+    𝔼[τ ∂μ, ‖G τ - c‖ ^ 2] = totalVariance μ G + ‖𝔼[μ; G] - c‖ ^ 2 := by
+  have hGc : MemLp (fun τ => G τ - c) 2 μ := hG.sub (memLp_const c)
   have h1 := totalVariance_eq hGc
-  have hmean : 𝔼[ω ∂μ, G ω - c] = 𝔼[μ; G] - c := by
+  have hmean : 𝔼[τ ∂μ, G τ - c] = 𝔼[μ; G] - c := by
     rw [integral_sub (hG.integrable (by norm_num)) (integrable_const c), integral_const]
     simp
-  have hvar : totalVariance μ (fun ω => G ω - c) = totalVariance μ G := by
+  have hvar : totalVariance μ (fun τ => G τ - c) = totalVariance μ G := by
     unfold totalVariance
     simp_rw [hmean, sub_sub_sub_cancel_right]
   rw [hmean, hvar] at h1
@@ -142,8 +142,8 @@ lemma mse_eq_variance_add_sq {G : Ω → E} (hG : MemLp G 2 μ) (c : E) :
 /-- Setting the baseline to the expected return `b = 𝔼[G]` (`eq:expected_return_baseline`)
 minimizes the mean squared deviation `𝔼[‖G - c‖²]` over all constants `c`. -/
 lemma expected_return_minimizes_mse {G : Ω → E} (hG : MemLp G 2 μ) (c : E) :
-    𝔼[ω ∂μ, ‖G ω - 𝔼[μ; G]‖ ^ 2] ≤ 𝔼[ω ∂μ, ‖G ω - c‖ ^ 2] := by
-  change totalVariance μ G ≤ 𝔼[ω ∂μ, ‖G ω - c‖ ^ 2]
+    𝔼[τ ∂μ, ‖G τ - 𝔼[μ; G]‖ ^ 2] ≤ 𝔼[τ ∂μ, ‖G τ - c‖ ^ 2] := by
+  change totalVariance μ G ≤ 𝔼[τ ∂μ, ‖G τ - c‖ ^ 2]
   rw [mse_eq_variance_add_sq hG c]
   linarith [sq_nonneg ‖𝔼[μ; G] - c‖]
 
@@ -189,23 +189,23 @@ omit [CompleteSpace E] [IsProbabilityMeasure μ] in
 lemma baselineStep_secondMoment_bound {T : ℕ} (X : Fin T → Ω → E) (G b : Fin T → Ω → ℝ)
     (Kr C : ℝ) (hC : 0 ≤ C) (t : Fin T)
     (hY : MemLp (baselineStep X G b t) 2 μ)
-    (hGb : MemLp (fun ω => G t ω - b t ω) 2 μ)
-    (hXbound : ∀ᵐ ω ∂μ, ‖X t ω‖ ^ 2 ≤ C)
-    (hGvar : 𝔼[ω ∂μ, (G t ω - b t ω) ^ 2] ≤ ((T - t.val : ℕ) : ℝ) * Kr) :
-    𝔼[ω ∂μ, ‖baselineStep X G b t ω‖ ^ 2] ≤ ((T - t.val : ℕ) : ℝ) * Kr * C := by
-  have hpoint : ∀ᵐ ω ∂μ, ‖baselineStep X G b t ω‖ ^ 2 ≤ (G t ω - b t ω) ^ 2 * C := by
-    filter_upwards [hXbound] with ω hω
+    (hGb : MemLp (fun τ => G t τ - b t τ) 2 μ)
+    (hXbound : ∀ᵐ τ ∂μ, ‖X t τ‖ ^ 2 ≤ C)
+    (hGvar : 𝔼[τ ∂μ, (G t τ - b t τ) ^ 2] ≤ ((T - t.val : ℕ) : ℝ) * Kr) :
+    𝔼[τ ∂μ, ‖baselineStep X G b t τ‖ ^ 2] ≤ ((T - t.val : ℕ) : ℝ) * Kr * C := by
+  have hpoint : ∀ᵐ τ ∂μ, ‖baselineStep X G b t τ‖ ^ 2 ≤ (G t τ - b t τ) ^ 2 * C := by
+    filter_upwards [hXbound] with τ hτ
     simp only [baselineStep, norm_smul, mul_pow, Real.norm_eq_abs, sq_abs]
-    exact mul_le_mul_of_nonneg_left hω (sq_nonneg _)
-  have hint_rhs : Integrable (fun ω => (G t ω - b t ω) ^ 2 * C) μ := by
+    exact mul_le_mul_of_nonneg_left hτ (sq_nonneg _)
+  have hint_rhs : Integrable (fun τ => (G t τ - b t τ) ^ 2 * C) μ := by
     have h1 := hGb.norm.integrable_sq
     simp only [Real.norm_eq_abs, sq_abs] at h1
     exact h1.mul_const C
   calc
-    𝔼[ω ∂μ, ‖baselineStep X G b t ω‖ ^ 2]
-        ≤ 𝔼[ω ∂μ, (G t ω - b t ω) ^ 2 * C] :=
+    𝔼[τ ∂μ, ‖baselineStep X G b t τ‖ ^ 2]
+        ≤ 𝔼[τ ∂μ, (G t τ - b t τ) ^ 2 * C] :=
           integral_mono_ae hY.norm.integrable_sq hint_rhs hpoint
-    _ = 𝔼[ω ∂μ, (G t ω - b t ω) ^ 2] * C := integral_mul_const C _
+    _ = 𝔼[τ ∂μ, (G t τ - b t τ) ^ 2] * C := integral_mul_const C _
     _ ≤ (((T - t.val : ℕ) : ℝ) * Kr) * C := mul_le_mul_of_nonneg_right hGvar hC
     _ = ((T - t.val : ℕ) : ℝ) * Kr * C := by ring
 
@@ -242,16 +242,16 @@ lemma sum_horizon_remaining_le_sq (T : ℕ) :
 theorem baseline_variance_bound {T : ℕ} (X : Fin T → Ω → E) (G b : Fin T → Ω → ℝ)
     (Kr C : ℝ) (hKr : 0 ≤ Kr) (hC : 0 ≤ C)
     (hY : ∀ t, MemLp (baselineStep X G b t) 2 μ)
-    (horth : ∀ i j, i ≠ j → 𝔼[ω ∂μ, ⟪baselineStep X G b i ω, baselineStep X G b j ω⟫_ℝ] = 0)
-    (hstep : ∀ t : Fin T, 𝔼[ω ∂μ, ‖baselineStep X G b t ω‖ ^ 2] ≤ ((T - t.val : ℕ) : ℝ) * Kr * C) :
+    (horth : ∀ i j, i ≠ j → 𝔼[τ ∂μ, ⟪baselineStep X G b i τ, baselineStep X G b j τ⟫_ℝ] = 0)
+    (hstep : ∀ t : Fin T, 𝔼[τ ∂μ, ‖baselineStep X G b t τ‖ ^ 2] ≤ ((T - t.val : ℕ) : ℝ) * Kr * C) :
     totalVariance μ (baselineEstimator X G b) ≤ (T : ℝ) ^ 2 * Kr * C := by
   have hg : MemLp (baselineEstimator X G b) 2 μ :=
     memLp_finsetSum Finset.univ (fun t _ => hY t)
   calc
     totalVariance μ (baselineEstimator X G b)
-        ≤ 𝔼[ω ∂μ, ‖baselineEstimator X G b ω‖ ^ 2] :=
+        ≤ 𝔼[τ ∂μ, ‖baselineEstimator X G b τ‖ ^ 2] :=
           totalVariance_le_secondMoment hg
-    _ = ∑ t : Fin T, 𝔼[ω ∂μ, ‖baselineStep X G b t ω‖ ^ 2] :=
+    _ = ∑ t : Fin T, 𝔼[τ ∂μ, ‖baselineStep X G b t τ‖ ^ 2] :=
           score_sum_secondMoment (baselineStep X G b) hY horth
     _ ≤ ∑ t : Fin T, (((T - t.val : ℕ) : ℝ) * Kr * C) :=
           Finset.sum_le_sum (fun t _ => hstep t)
@@ -270,11 +270,11 @@ theorem baseline_variance_bound_of_return_variance {T : ℕ}
     (X : Fin T → Ω → E) (G b : Fin T → Ω → ℝ) (rmax M ρ C : ℝ)
     (hM : 0 ≤ M) (hρ0 : 0 ≤ ρ) (hρ1 : ρ < 1) (hC : 0 ≤ C)
     (hY : ∀ t, MemLp (baselineStep X G b t) 2 μ)
-    (hGb : ∀ t, MemLp (fun ω => G t ω - b t ω) 2 μ)
-    (horth : ∀ i j, i ≠ j → 𝔼[ω ∂μ, ⟪baselineStep X G b i ω, baselineStep X G b j ω⟫_ℝ] = 0)
-    (hXbound : ∀ t, ∀ᵐ ω ∂μ, ‖X t ω‖ ^ 2 ≤ C)
+    (hGb : ∀ t, MemLp (fun τ => G t τ - b t τ) 2 μ)
+    (horth : ∀ i j, i ≠ j → 𝔼[τ ∂μ, ⟪baselineStep X G b i τ, baselineStep X G b j τ⟫_ℝ] = 0)
+    (hXbound : ∀ t, ∀ᵐ τ ∂μ, ‖X t τ‖ ^ 2 ≤ C)
     (hGvar : ∀ t : Fin T,
-      𝔼[ω ∂μ, (G t ω - b t ω) ^ 2] ≤ ((T - t.val : ℕ) : ℝ) * rewardVarianceConst rmax M ρ) :
+      𝔼[τ ∂μ, (G t τ - b t τ) ^ 2] ≤ ((T - t.val : ℕ) : ℝ) * rewardVarianceConst rmax M ρ) :
     totalVariance μ (baselineEstimator X G b)
       ≤ (T : ℝ) ^ 2 * rewardVarianceConst rmax M ρ * C := by
   have hKr : 0 ≤ rewardVarianceConst rmax M ρ := by
