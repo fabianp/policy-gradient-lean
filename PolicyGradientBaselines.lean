@@ -245,20 +245,28 @@ theorem baseline_variance_bound {T : ℕ} (X : Fin T → Ω → E) (G b : Fin T 
     (horth : ∀ i j, i ≠ j → 𝔼[τ ∂μ, ⟪baselineStep X G b i τ, baselineStep X G b j τ⟫_ℝ] = 0)
     (hstep : ∀ t : Fin T, 𝔼[τ ∂μ, ‖baselineStep X G b t τ‖ ^ 2] ≤ ((T - t.val : ℕ) : ℝ) * Kr * C) :
     totalVariance μ (baselineEstimator X G b) ≤ (T : ℝ) ^ 2 * Kr * C := by
+  -- Verify `ĝ_b = ∑_t Y_t ∈ L²(μ)` so its second moment is well-defined
   have hg : MemLp (baselineEstimator X G b) 2 μ :=
     memLp_finsetSum Finset.univ (fun t _ => hY t)
+  -- Step 3️⃣ chain of inequalities (`eq:baseline_second_moment` in Part 2):
   calc
+    -- Line 1: `Var(ĝ_b) = 𝔼[‖ĝ_b‖²] - ‖𝔼[ĝ_b]‖² ≤ 𝔼[‖ĝ_b‖²]`
     totalVariance μ (baselineEstimator X G b)
         ≤ 𝔼[τ ∂μ, ‖baselineEstimator X G b τ‖ ^ 2] :=
           totalVariance_le_secondMoment hg
+    -- Line 2: apply the Pythagorean identity `𝔼[‖∑_t Y_t‖²] = ∑_t 𝔼[‖Y_t‖²]` for orthogonal increments `Y_t`
     _ = ∑ t : Fin T, 𝔼[τ ∂μ, ‖baselineStep X G b t τ‖ ^ 2] :=
           score_sum_secondMoment (baselineStep X G b) hY horth
+    -- Line 3 (`eq:per_step_moment_bound`): bound each per-step second moment `𝔼[‖Y_t‖²] ≤ (T - t) K_r C`
     _ ≤ ∑ t : Fin T, (((T - t.val : ℕ) : ℝ) * Kr * C) :=
           Finset.sum_le_sum (fun t _ => hstep t)
+    -- Line 4: factor `K_r C` out of the sum over time steps `t`
     _ = (∑ t : Fin T, ((T - t.val : ℕ) : ℝ)) * (Kr * C) := by
           simp_rw [mul_assoc, ← Finset.sum_mul]
+    -- Line 5: bound the triangular horizon sum `∑_{t=0}^{T-1} (T - t) = T(T+1)/2 ≤ T²`
     _ ≤ (T : ℝ) ^ 2 * (Kr * C) :=
           mul_le_mul_of_nonneg_right (sum_horizon_remaining_le_sq T) (mul_nonneg hKr hC)
+    -- Rearrange factors: `T² (K_r C) = T² K_r C`
     _ = (T : ℝ) ^ 2 * Kr * C := by ring
 
 /-- Full end-to-end theorem stated in the framed lemma of Part 2 (`eq:baseline_variance_bound`):
@@ -266,23 +274,35 @@ under bounded score norms `‖X_t‖² ≤ C` (`eq:bounded_scores`), centered re
 `𝔼[(G_t - b_t)²] ≤ (T - t) K_r` (`eq:return_variance_bound`), and orthogonal per-step increments,
 the baseline policy gradient estimator satisfies:
 `Var(ĝ_b) ≤ T² K_r C` where `K_r = rmax² + 2 M ρ / (1 - ρ)`. -/
-theorem baseline_variance_bound_of_return_variance {T : ℕ}
-    (X : Fin T → Ω → E) (G b : Fin T → Ω → ℝ) (rmax M ρ C : ℝ)
-    (hM : 0 ≤ M) (hρ0 : 0 ≤ ρ) (hρ1 : ρ < 1) (hC : 0 ≤ C)
-    (hY : ∀ t, MemLp (baselineStep X G b t) 2 μ)
-    (hGb : ∀ t, MemLp (fun τ => G t τ - b t τ) 2 μ)
-    (horth : ∀ i j, i ≠ j → 𝔼[τ ∂μ, ⟪baselineStep X G b i τ, baselineStep X G b j τ⟫_ℝ] = 0)
-    (hXbound : ∀ t, ∀ᵐ τ ∂μ, ‖X t τ‖ ^ 2 ≤ C)
-    (hGvar : ∀ t : Fin T,
-      𝔼[τ ∂μ, (G t τ - b t τ) ^ 2] ≤ ((T - t.val : ℕ) : ℝ) * rewardVarianceConst rmax M ρ) :
-    totalVariance μ (baselineEstimator X G b)
-      ≤ (T : ℝ) ^ 2 * rewardVarianceConst rmax M ρ * C := by
+theorem baseline_variance_bound_of_return_variance
+    {T : ℕ}                                                  -- Horizon length `T` (number of time steps in a trajectory)
+    (X : Fin T → Ω → E)                                      -- Per-step score vectors `X_t(τ) = ∇_θ log π_θ(a_t | s_t) ∈ E`
+    (G : Fin T → Ω → ℝ)                                      -- Reward-to-go `G_t(τ) = ∑_{k=t}^{T-1} r_k(τ) ∈ ℝ` from step `t`
+    (b : Fin T → Ω → ℝ)                                      -- State-dependent baseline `b_t(τ) = b(s_t) ∈ ℝ` at step `t`
+    (rmax M ρ C : ℝ)                                         -- Constants `r_max` (reward bound), `M, ρ` (mixing parameters), and `C` (score bound)
+    (hM : 0 ≤ M)                                             -- Mixing covariance scale `M` is non-negative
+    (hρ0 : 0 ≤ ρ)                                            -- Mixing decay rate `ρ` is non-negative (`0 ≤ ρ`)
+    (hρ1 : ρ < 1)                                            -- Mixing decay rate `ρ` is strictly less than 1 (`ρ < 1`)
+    (hC : 0 ≤ C)                                             -- Score norm bound `C` is non-negative
+    (hY : ∀ t, MemLp (baselineStep X G b t) 2 μ)             -- Each centered step `Y_t = (G_t - b_t) • X_t` is square-integrable (`Y_t ∈ L²(μ)`)
+    (hGb : ∀ t, MemLp (fun τ => G t τ - b t τ) 2 μ)          -- Each centered return `G_t - b_t` is square-integrable (`G_t - b_t ∈ L²(μ)`)
+    (horth : ∀ i j, i ≠ j →                                  -- Centered per-step gradient contributions `Y_i, Y_j` at distinct steps
+      𝔼[τ ∂μ, ⟪baselineStep X G b i τ, baselineStep X G b j τ⟫_ℝ] = 0) -- `i ≠ j` are uncorrelated (`𝔼[Y_iᵀ Y_j] = 0`)
+    (hXbound : ∀ t, ∀ᵐ τ ∂μ, ‖X t τ‖ ^ 2 ≤ C)                -- Per-step squared score norm is bounded almost surely (`‖X_t(τ)‖² ≤ C`, `eq:bounded_scores`)
+    (hGvar : ∀ t : Fin T,                                    -- Step 1️⃣ (`eq:return_variance_bound`): centered return variance at step `t` is bounded
+      𝔼[τ ∂μ, (G t τ - b t τ) ^ 2] ≤ ((T - t.val : ℕ) : ℝ) * rewardVarianceConst rmax M ρ) : -- by `(T - t) K_r` over the remaining `T - t` steps
+    totalVariance μ (baselineEstimator X G b)                -- Conclusion: total variance `Var(ĝ_b)` of the baseline estimator
+      ≤ (T : ℝ) ^ 2 * rewardVarianceConst rmax M ρ * C := by -- is bounded above by `T² K_r C` (quadratic `O(T²)` scaling)
+  -- Verify that the return variance constant `K_r = r_max² + 2 M ρ / (1 - ρ)` is non-negative
   have hKr : 0 ≤ rewardVarianceConst rmax M ρ := by
     unfold rewardVarianceConst
     have h1 : 0 < 1 - ρ := sub_pos.mpr hρ1
     positivity
+  -- Step 3️⃣ (`eq:baseline_second_moment`): reduce the total variance bound to bounding each per-step second moment `𝔼[‖Y_t‖²]`
   apply baseline_variance_bound X G b (rewardVarianceConst rmax M ρ) C hKr hC hY horth
   intro t
+  -- Step 2️⃣ (`eq:per_step_moment_bound`): combine `‖X_t‖² ≤ C` (`hXbound`) with `𝔼[(G_t - b_t)²] ≤ (T - t) K_r` (`hGvar`)
+  -- to obtain `𝔼[‖Y_t‖²] ≤ (T - t) K_r C`
   exact baselineStep_secondMoment_bound X G b (rewardVarianceConst rmax M ρ) C hC t
     (hY t) (hGb t) (hXbound t) (hGvar t)
 
