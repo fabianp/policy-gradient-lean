@@ -82,12 +82,7 @@ lemma totalVariance_sub {Y Z : Ω → E} (hY : MemLp Y 2 μ) (hZ : MemLp Z 2 μ)
   have hZc : MemLp Zc 2 μ := hZ.sub (memLp_const _)
   have hYc_sq : Integrable (fun τ => ‖Yc τ‖ ^ 2) μ := hYc.norm.integrable_sq
   have hZc_sq : Integrable (fun τ => ‖Zc τ‖ ^ 2) μ := hZc.norm.integrable_sq
-  have hYZ : Integrable (fun τ => ⟪Yc τ, Zc τ⟫_ℝ) μ := by
-    apply (hYc_sq.add hZc_sq).mono' (hYc.aestronglyMeasurable.inner hZc.aestronglyMeasurable)
-    filter_upwards [] with τ
-    change ‖⟪Yc τ, Zc τ⟫_ℝ‖ ≤ ‖Yc τ‖ ^ 2 + ‖Zc τ‖ ^ 2
-    have hb := norm_inner_le_norm (𝕜 := ℝ) (Yc τ) (Zc τ)
-    nlinarith [sq_nonneg (‖Yc τ‖ - ‖Zc τ‖)]
+  have hYZ : Integrable (fun τ => ⟪Yc τ, Zc τ⟫_ℝ) μ := integrable_inner_of_memLp hYc hZc
   have h2YZ : Integrable (fun τ => 2 * ⟪Yc τ, Zc τ⟫_ℝ) μ := hYZ.const_mul 2
   unfold totalVariance totalCovariance
   have hmean : 𝔼[τ ∂μ, Y τ - Z τ] = 𝔼[μ; Y] - 𝔼[μ; Z] := integral_sub hiY hiZ
@@ -153,19 +148,12 @@ lemma expected_return_minimizes_mse {G : Ω → E} (hG : MemLp G 2 μ) (c : E) :
 def rewardVarianceConst (rmax M ρ : ℝ) : ℝ :=
   rmax ^ 2 + 2 * M * ρ / (1 - ρ)
 
-/-- Finite geometric series bound: for `ρ ∈ [0, 1)`, `∑_{d=1}^n ρ^d ≤ ρ / (1 - ρ)`. -/
+/-- Finite geometric series bound: for `ρ ∈ [0, 1)`, `∑_{d=1}^n ρ^d ≤ ρ / (1 - ρ)`.
+Proved using Mathlib's `geom_sum_Ico_mul_neg`. -/
 lemma geom_sum_Ico_le {ρ : ℝ} (hρ0 : 0 ≤ ρ) (hρ1 : ρ < 1) (n : ℕ) :
     (∑ d ∈ Finset.Ico 1 (n + 1), ρ ^ d) ≤ ρ / (1 - ρ) := by
-  have h1 : 0 < 1 - ρ := sub_pos.mpr hρ1
-  rw [le_div_iff₀ h1]
-  have htel : (∑ d ∈ Finset.Ico 1 (n + 1), ρ ^ d) * (1 - ρ) = ρ - ρ ^ (n + 1) := by
-    induction n with
-    | zero => simp
-    | succ m ih =>
-      rw [Finset.sum_Ico_succ_top (by omega), add_mul, ih]
-      ring
-  have hpow : 0 ≤ ρ ^ (n + 1) := pow_nonneg hρ0 _
-  linarith
+  rw [le_div_iff₀ (sub_pos.mpr hρ1), geom_sum_Ico_mul_neg ρ (Nat.le_add_left 1 n), pow_one]
+  linarith [pow_nonneg hρ0 (n + 1)]
 
 /-- Equation `eq:return_variance_bound`: if `m = T - t` centered rewards have per-step variance
 bounded by `rmax²` (`eq:bounded_rewards`) and off-diagonal covariance bounded by `2 M ρ / (1 - ρ)`
@@ -212,17 +200,19 @@ lemma baselineStep_secondMoment_bound {T : ℕ} (X : Fin T → Ω → E) (G b : 
 /-! ### Step 3️⃣: Summing over all time steps (`eq:baseline_second_moment` & `eq:baseline_variance_bound`) -/
 
 /-- Exact triangular sum identity appearing in `eq:baseline_second_moment`:
-`2 * ∑_{t=0}^{T-1} (T - t) = T (T + 1)`. -/
+`2 * ∑_{t=0}^{T-1} (T - t) = T (T + 1)`, proved via Mathlib's `Finset.sum_range_reflect` and
+Gauss' summation formula `Finset.sum_range_id_mul_two`. -/
 lemma sum_range_sub_eq (T : ℕ) :
     2 * (∑ t ∈ Finset.range T, (T - t)) = T * (T + 1) := by
-  induction T with
-  | zero => simp
-  | succ n ih =>
-    have hsplit : ∑ t ∈ Finset.range (n + 1), (n + 1 - t) =
-        (n + 1) + ∑ t ∈ Finset.range n, (n - t) := by
-      rw [Finset.sum_range_succ']
-      simp [add_comm]
-    linarith
+  have hrefl : ∑ t ∈ Finset.range T, (T - t) = ∑ t ∈ Finset.range T, (t + 1) := by
+    rw [← Finset.sum_range_reflect (fun t => t + 1) T]
+    refine Finset.sum_congr rfl fun t ht => ?_
+    have := Finset.mem_range.mp ht
+    omega
+  have hgauss := Finset.sum_range_id_mul_two (T + 1)
+  rw [Finset.sum_range_succ'] at hgauss
+  simp only [add_zero, Nat.add_sub_cancel] at hgauss
+  linarith
 
 /-- Quadratic upper bound on the horizon sum in `eq:baseline_second_moment`:
 `∑_{t=0}^{T-1} (T - t) ≤ T²`. -/
@@ -236,7 +226,6 @@ lemma sum_horizon_remaining_le_sq (T : ℕ) :
         ≤ ∑ _t : Fin T, (T : ℝ) := Finset.sum_le_sum (fun t _ => hterm t)
     _ = (T : ℝ) ^ 2 := by simp [sq]
 
-omit [CompleteSpace E] in
 /-- Centered per-step gradient contributions `Y_i, Y_j` (`i ≠ j`) are uncorrelated
 (`𝔼[⟪Y_i, Y_j⟫] = 0`), obtained immediately from `PolicyRollout.orthogonal_smul` (Part 1)
 with scalar weights `w_t(τ) = G_t(τ) - b_t(τ)`. -/

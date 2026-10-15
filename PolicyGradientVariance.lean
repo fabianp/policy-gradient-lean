@@ -1,3 +1,4 @@
+import Mathlib.Analysis.Calculus.Gradient.Basic
 import Mathlib.MeasureTheory.Function.L2Space
 import Mathlib.Tactic
 
@@ -119,13 +120,7 @@ lemma totalVariance_le_secondMoment {g : Ω → E} (hg : MemLp g 2 μ) :
 
 /-! ### Step 1️⃣: Uncorrelated per-step scores (`eq:zero_score_mean` – `eq:per_step_decomp`) -/
 
-omit [MeasurableSpace Ω] [CompleteSpace E] [IsProbabilityMeasure μ] in
-/-- `HasGradientAt f g θ` means `g ∈ E` is the gradient `∇_θ f(θ)` in the Hilbert space `E`,
-i.e., the Fréchet derivative of `f` at `θ` is the inner-product linear form `v ↦ ⟪g, v⟫_ℝ`. -/
-def HasGradientAt (f : E → ℝ) (g : E) (θ : E) : Prop :=
-  HasFDerivAt f (innerSL ℝ g) θ
-
-omit [MeasurableSpace Ω] [CompleteSpace E] [IsProbabilityMeasure μ] in
+omit [MeasurableSpace Ω] [IsProbabilityMeasure μ] in
 /-- Differentiating the policy normalization identity `∑ a, π_{θ'}(a) = 1` with respect to `θ'`
 at `θ` proves that the policy gradients sum to zero: `∑ a, ∇_θ π_θ(a) = 0`. -/
 lemma policy_grad_sum_eq_zero {A : Type*} [Fintype A]
@@ -133,20 +128,15 @@ lemma policy_grad_sum_eq_zero {A : Type*} [Fintype A]
     (hnorm : ∀ θ', ∑ a : A, π θ' a = 1)
     (hgrad : ∀ a : A, HasGradientAt (fun θ' => π θ' a) (grad_π a) θ) :
     ∑ a : A, grad_π a = 0 := by
-  have hsum : HasFDerivAt (fun θ' => ∑ a : A, π θ' a) (∑ a : A, innerSL ℝ (grad_π a)) θ := by
-    simpa using HasFDerivAt.fun_sum (u := Finset.univ) (fun a _ => hgrad a)
-  have hconst : HasFDerivAt (fun θ' => ∑ a : A, π θ' a) (0 : E →L[ℝ] ℝ) θ := by
+  have hsum : HasGradientAt (fun θ' => ∑ a : A, π θ' a) (∑ a : A, grad_π a) θ := by
+    rw [hasGradientAt_iff_hasFDerivAt, map_sum]
+    simpa using HasFDerivAt.fun_sum (u := Finset.univ) (fun a _ => (hgrad a).hasFDerivAt)
+  have hconst : HasGradientAt (fun θ' => ∑ a : A, π θ' a) 0 θ := by
     rw [show (fun θ' => ∑ a : A, π θ' a) = fun _ => (1 : ℝ) from funext hnorm]
-    exact hasFDerivAt_const (1 : ℝ) θ
-  have heq : ∑ a : A, innerSL ℝ (grad_π a) = 0 := hsum.unique hconst
-  rw [← map_sum] at heq
-  have hinner : ⟪∑ a : A, grad_π a, ∑ a : A, grad_π a⟫_ℝ = 0 := by
-    change innerSL ℝ (∑ a : A, grad_π a) (∑ a : A, grad_π a) = 0
-    rw [heq]
-    rfl
-  exact inner_self_eq_zero.mp hinner
+    exact hasGradientAt_const θ (1 : ℝ)
+  exact hsum.unique hconst
 
-omit [MeasurableSpace Ω] [CompleteSpace E] [IsProbabilityMeasure μ] in
+omit [MeasurableSpace Ω] [IsProbabilityMeasure μ] in
 /-- Equation `eq:zero_score_mean` proved from policy normalization `∑ a, π_{θ'}(a) = 1`:
 for a differentiable policy `π` with non-zero action probabilities `π θ a ≠ 0`, the expected
 log-derivative score `∑ a, π_θ(a) • (π_θ(a)⁻¹ • ∇_θ π_θ(a))` simplifies to `∑ a, ∇_θ π_θ(a)`,
@@ -217,11 +207,10 @@ lemma tower_property [Fintype Ω] [DiscreteMeasurableSpace Ω]
       rw [hτ.1, hτ.2]
   rw [hfib, hpolicy h a, mul_assoc]
 
-omit [CompleteSpace E] in
 /-- A `T`-step trajectory rollout under a differentiable policy `π_θ` on a finite state/context
 space `H` and finite action space `A`, shared between Part 1 (`PolicyGradientVariance`) and Part 2
 (`PolicyGradientBaselines`). -/
-structure PolicyRollout (E : Type*) [NormedAddCommGroup E] [InnerProductSpace ℝ E]
+structure PolicyRollout (E : Type*) [NormedAddCommGroup E] [InnerProductSpace ℝ E] [CompleteSpace E]
     [Fintype Ω] (μ : Measure Ω) (T : ℕ) (H A : Type*)
     [DecidableEq H] [Fintype A] [DecidableEq A] where
   /-- Conditioning context `h_t(τ) = (s_0, a_0, ..., s_t)` at step `t`. -/
@@ -248,13 +237,13 @@ structure PolicyRollout (E : Type*) [NormedAddCommGroup E] [InnerProductSpace �
   /-- Causality: for `i < j`, the earlier step `(h_i, a_i)` is determined by `h_j`. -/
   hadapt : ∀ i j : Fin T, i < j → ∃ f : H → H × A, ∀ τ, (hist i τ, act i τ) = f (hist j τ)
 
-omit [MeasurableSpace Ω] [CompleteSpace E] [IsProbabilityMeasure μ] in
+omit [MeasurableSpace Ω] [IsProbabilityMeasure μ] in
 /-- Per-step score vector `P.score t τ = ∇_θ log π_θ(a_t | h_t)` of a `PolicyRollout`. -/
 def PolicyRollout.score [Fintype Ω] {T : ℕ} {H A : Type*} [DecidableEq H] [Fintype A] [DecidableEq A]
     (P : PolicyRollout E μ T H A) (t : Fin T) (τ : Ω) : E :=
   policyScore P.π P.grad_π P.θ P.hist P.act t τ
 
-omit [MeasurableSpace Ω] [CompleteSpace E] [IsProbabilityMeasure μ] in
+omit [MeasurableSpace Ω] [IsProbabilityMeasure μ] in
 /-- Scalar per-step weights `w_t(τ)` are adapted to `P.hist` if for `i < j`, both `w_i(τ)` and
 `w_j(τ)` are determined by the conditioning context `P.hist j τ` at step `j`. -/
 def PolicyRollout.AdaptedWeight [Fintype Ω] {T : ℕ} {H A : Type*} [DecidableEq H] [Fintype A] [DecidableEq A]
@@ -262,7 +251,6 @@ def PolicyRollout.AdaptedWeight [Fintype Ω] {T : ℕ} {H A : Type*} [DecidableE
   ∀ i j : Fin T, i < j → ∃ wi wj : H → ℝ,
     ∀ τ, w i τ = wi (P.hist j τ) ∧ w j τ = wj (P.hist j τ)
 
-omit [CompleteSpace E] in
 /-- Shared orthogonality theorem for weighted score increments `w_t(τ) • P.score t τ`:
 combining policy normalization (`∑ a, π_{θ'}(a | h_j) = 1`), the log-derivative score identity
 (`finite_policy_score_zero_mean`, `eq:zero_score_mean`), the proved tower property
@@ -309,7 +297,6 @@ lemma PolicyRollout.orthogonal_smul [Fintype Ω] [DiscreteMeasurableSpace Ω]
   rw [hinner_sum, finite_policy_score_zero_mean (fun θ' a => P.π θ' j h a) (P.grad_π j h) P.θ
     (P.hpos j h) (P.hnorm j h) (P.hgrad j h), inner_zero_right, mul_zero, mul_zero]
 
-omit [CompleteSpace E] in
 /-- Unweighted per-step scores `P.score i` and `P.score j` at distinct time steps `i ≠ j` are
 uncorrelated (`eq:uncorrelated_scores`), obtained as the `w ≡ 1` specialization of
 `PolicyRollout.orthogonal_smul`. -/
@@ -322,19 +309,23 @@ lemma orthogonal_scores_of_finite_policy [Fintype Ω] [DiscreteMeasurableSpace �
   simpa [one_smul] using h1
 
 omit [CompleteSpace E] [IsProbabilityMeasure μ] in
+/-- Pointwise inner product of two `L²(μ)` functions is integrable (wrapping Mathlib's
+`L2.integrable_inner`). -/
+lemma integrable_inner_of_memLp {f g : Ω → E} (hf : MemLp f 2 μ) (hg : MemLp g 2 μ) :
+    Integrable (fun τ => ⟪f τ, g τ⟫_ℝ) μ := by
+  refine (L2.integrable_inner (𝕜 := ℝ) (hf.toLp f) (hg.toLp g)).congr ?_
+  filter_upwards [hf.coeFn_toLp, hg.coeFn_toLp] with τ hτf hτg
+  rw [hτf, hτg]
+
+omit [CompleteSpace E] [IsProbabilityMeasure μ] in
 /-- Equation `eq:per_step_decomp`: uncorrelated score increments (`E[⟪X_i, X_j⟫] = 0` for `i ≠ j`)
 make the second moment of `scoreSum X` equal the sum of per-step second moments. -/
 lemma score_sum_secondMoment {T : ℕ} (X : Fin T → Ω → E)
     (hX : ∀ t, MemLp (X t) 2 μ)
     (horth : ∀ i j, i ≠ j → 𝔼[τ ∂μ, ⟪X i τ, X j τ⟫_ℝ] = 0) :
     𝔼[τ ∂μ, ‖scoreSum X τ‖ ^ 2] = ∑ t, 𝔼[τ ∂μ, ‖X t τ‖ ^ 2] := by
-  have hint (i j : Fin T) : Integrable (fun τ => ⟪X i τ, X j τ⟫_ℝ) μ := by
-    apply ((hX i).norm.integrable_sq.add (hX j).norm.integrable_sq).mono'
-      ((hX i).aestronglyMeasurable.inner (hX j).aestronglyMeasurable)
-    filter_upwards [] with τ
-    change ‖⟪X i τ, X j τ⟫_ℝ‖ ≤ ‖X i τ‖ ^ 2 + ‖X j τ‖ ^ 2
-    have hb := norm_inner_le_norm (𝕜 := ℝ) (X i τ) (X j τ)
-    nlinarith [sq_nonneg (‖X i τ‖ - ‖X j τ‖)]
+  have hint (i j : Fin T) : Integrable (fun τ => ⟪X i τ, X j τ⟫_ℝ) μ :=
+    integrable_inner_of_memLp (hX i) (hX j)
   simp only [scoreSum]
   simp_rw [← real_inner_self_eq_norm_sq, sum_inner, inner_sum]
   rw [integral_finsetSum _ (fun i _ => integrable_finsetSum _ (fun j _ => hint i j))]
