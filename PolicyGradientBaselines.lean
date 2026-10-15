@@ -242,7 +242,7 @@ omit [CompleteSpace E] in
 with scalar weights `w_t(τ) = G_t(τ) - b_t(τ)`. -/
 lemma orthogonal_baselineSteps_of_finite_policy [Fintype Ω] [DiscreteMeasurableSpace Ω]
     {T : ℕ} {H A : Type*} [Fintype H] [DecidableEq H] [Fintype A] [DecidableEq A]
-    (P : PolicyRollout (E := E) μ T H A) (G b : Fin T → Ω → ℝ)
+    (P : PolicyRollout E μ T H A) (G b : Fin T → Ω → ℝ)
     (hadapt : P.AdaptedWeight (fun t τ => G t τ - b t τ)) :
     ∀ i j : Fin T, i ≠ j →
       𝔼[τ ∂μ, ⟪baselineStep P.score G b i τ, baselineStep P.score G b j τ⟫_ℝ] = 0 :=
@@ -300,7 +300,7 @@ for a differentiable policy rollout `P` with bounded per-step score norms `‖X_
 theorem baseline_variance_bound_of_return_variance
     [Fintype Ω] [DiscreteMeasurableSpace Ω]
     {T : ℕ} {H A : Type*} [Fintype H] [DecidableEq H] [Fintype A] [DecidableEq A]
-    (P : PolicyRollout (E := E) μ T H A)                     -- Differentiable policy rollout over `T` steps
+    (P : PolicyRollout E μ T H A)                            -- Differentiable policy rollout over `T` steps
     (G b : Fin T → Ω → ℝ)                                    -- Reward-to-go `G_t` and state-dependent baseline `b_t`
     (rmax M ρ C : ℝ)                                         -- Constants `r_max` (reward bound), `M, ρ` (mixing), and `C` (score bound)
     (hadapt : P.AdaptedWeight (fun t τ => G t τ - b t τ))    -- Conditioning on `h_j` (`i < j`) fixes centered returns `G_i - b_i, G_j - b_j`

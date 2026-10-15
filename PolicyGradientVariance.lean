@@ -221,7 +221,8 @@ omit [CompleteSpace E] in
 /-- A `T`-step trajectory rollout under a differentiable policy `π_θ` on a finite state/context
 space `H` and finite action space `A`, shared between Part 1 (`PolicyGradientVariance`) and Part 2
 (`PolicyGradientBaselines`). -/
-structure PolicyRollout [Fintype Ω] (μ : Measure Ω) (T : ℕ) (H A : Type*)
+structure PolicyRollout (E : Type*) [NormedAddCommGroup E] [InnerProductSpace ℝ E]
+    [Fintype Ω] (μ : Measure Ω) (T : ℕ) (H A : Type*)
     [DecidableEq H] [Fintype A] [DecidableEq A] where
   /-- Conditioning context `h_t(τ) = (s_0, a_0, ..., s_t)` at step `t`. -/
   hist : Fin T → Ω → H
@@ -250,14 +251,14 @@ structure PolicyRollout [Fintype Ω] (μ : Measure Ω) (T : ℕ) (H A : Type*)
 omit [MeasurableSpace Ω] [CompleteSpace E] [IsProbabilityMeasure μ] in
 /-- Per-step score vector `P.score t τ = ∇_θ log π_θ(a_t | h_t)` of a `PolicyRollout`. -/
 def PolicyRollout.score [Fintype Ω] {T : ℕ} {H A : Type*} [DecidableEq H] [Fintype A] [DecidableEq A]
-    (P : PolicyRollout (E := E) μ T H A) (t : Fin T) (τ : Ω) : E :=
+    (P : PolicyRollout E μ T H A) (t : Fin T) (τ : Ω) : E :=
   policyScore P.π P.grad_π P.θ P.hist P.act t τ
 
 omit [MeasurableSpace Ω] [CompleteSpace E] [IsProbabilityMeasure μ] in
 /-- Scalar per-step weights `w_t(τ)` are adapted to `P.hist` if for `i < j`, both `w_i(τ)` and
 `w_j(τ)` are determined by the conditioning context `P.hist j τ` at step `j`. -/
 def PolicyRollout.AdaptedWeight [Fintype Ω] {T : ℕ} {H A : Type*} [DecidableEq H] [Fintype A] [DecidableEq A]
-    (P : PolicyRollout (E := E) μ T H A) (w : Fin T → Ω → ℝ) : Prop :=
+    (P : PolicyRollout E μ T H A) (w : Fin T → Ω → ℝ) : Prop :=
   ∀ i j : Fin T, i < j → ∃ wi wj : H → ℝ,
     ∀ τ, w i τ = wi (P.hist j τ) ∧ w j τ = wj (P.hist j τ)
 
@@ -269,7 +270,7 @@ combining policy normalization (`∑ a, π_{θ'}(a | h_j) = 1`), the log-derivat
 that `w_i(τ) • X_i(τ)` and `w_j(τ) • X_j(τ)` are uncorrelated for all `i ≠ j`. -/
 lemma PolicyRollout.orthogonal_smul [Fintype Ω] [DiscreteMeasurableSpace Ω]
     {T : ℕ} {H A : Type*} [Fintype H] [DecidableEq H] [Fintype A] [DecidableEq A]
-    (P : PolicyRollout (E := E) μ T H A) (w : Fin T → Ω → ℝ)
+    (P : PolicyRollout E μ T H A) (w : Fin T → Ω → ℝ)
     (hw : P.AdaptedWeight w) :
     ∀ i j : Fin T, i ≠ j →
       𝔼[τ ∂μ, ⟪w i τ • P.score i τ, w j τ • P.score j τ⟫_ℝ] = 0 := by
@@ -314,7 +315,7 @@ uncorrelated (`eq:uncorrelated_scores`), obtained as the `w ≡ 1` specializatio
 `PolicyRollout.orthogonal_smul`. -/
 lemma orthogonal_scores_of_finite_policy [Fintype Ω] [DiscreteMeasurableSpace Ω]
     {T : ℕ} {H A : Type*} [Fintype H] [DecidableEq H] [Fintype A] [DecidableEq A]
-    (P : PolicyRollout (E := E) μ T H A) :
+    (P : PolicyRollout E μ T H A) :
     ∀ i j : Fin T, i ≠ j → 𝔼[τ ∂μ, ⟪P.score i τ, P.score j τ⟫_ℝ] = 0 := by
   have h1 := P.orthogonal_smul (fun _ _ => (1 : ℝ))
     (fun _ _ _ => ⟨fun _ => 1, fun _ => 1, fun _ => ⟨rfl, rfl⟩⟩)
@@ -417,7 +418,7 @@ with per-step score second moments bounded by `C` (`𝔼[‖X_t‖²] ≤ C`) an
 theorem reinforce_variance_bound_of_rewards
     [Fintype Ω] [DiscreteMeasurableSpace Ω]
     {T : ℕ} {H A : Type*} [Fintype H] [DecidableEq H] [Fintype A] [DecidableEq A]
-    (P : PolicyRollout (E := E) μ T H A)                     -- Differentiable policy rollout over `T` steps
+    (P : PolicyRollout E μ T H A)                            -- Differentiable policy rollout over `T` steps
     (r : Fin T → Ω → ℝ)                                      -- Per-step scalar rewards `r_t(τ) ∈ ℝ`
     (rmax C : ℝ)                                             -- Constants `r_max` (reward bound) and `C` (score second-moment bound)
     (hsecond : ∀ t, 𝔼[τ ∂μ, ‖P.score t τ‖ ^ 2] ≤ C)          -- Bounded score second moment (`𝔼[‖X_t‖²] ≤ C`)
