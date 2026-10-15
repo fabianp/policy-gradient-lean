@@ -35,7 +35,7 @@ Companion Lean 4 formalizations for the [*Policy Gradients* blog series](https:/
 | **Expected Return Baseline**: Optimal constant baseline | $\mathbb{E}[\|G - \mathbb{E}[G]\|^2] \le \mathbb{E}[\|G - c\|^2]$ | `mse_eq_variance_add_sq`, `expected_return_minimizes_mse` |
 | **Step 1️⃣**: Bounded centered return variance | $\sum_{d=1}^n \rho^d \le \frac{\rho}{1 - \rho}$, $\mathrm{Var}(G_t \mid s_t) \le (T - t) K_r$ | `rewardVarianceConst`, `geom_sum_Ico_le`, `return_variance_bound_of_mixing` |
 | **Step 2️⃣**: Per-step second moment bound | $\mathbb{E}[\|Y_t\|^2] \le (T - t) K_r C$ | `baselineStep_secondMoment_bound` |
-| **Step 3️⃣**: Summing over all time steps | $\sum_{t=0}^{T-1} (T - t) = \frac{T(T+1)}{2} \le T^2$, $\mathrm{Var}(\hat{g}_b) \le T^2 K_r C$ | `sum_range_sub_eq`, `sum_horizon_remaining_le_sq`, `baseline_variance_bound`, `baseline_variance_bound_of_return_variance` |
+| **Step 3️⃣**: Uncorrelated centered increments & summing over all time steps | $\mathbb{E}[\langle Y_i, Y_j \rangle] = 0$, $\sum_{t=0}^{T-1} (T - t) = \frac{T(T+1)}{2} \le T^2$, $\mathrm{Var}(\hat{g}_b) \le T^2 K_r C$ | `orthogonal_baselineSteps_of_finite_policy`, `sum_range_sub_eq`, `sum_horizon_remaining_le_sq`, `baseline_variance_bound`, `baseline_variance_bound_of_return_variance` |
 
 ## Reproducing & Checking the Proofs
 
