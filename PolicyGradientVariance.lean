@@ -218,50 +218,107 @@ lemma tower_property [Fintype Ω] [DiscreteMeasurableSpace Ω]
   rw [hfib, hpolicy h a, mul_assoc]
 
 omit [CompleteSpace E] in
-/-- Combine policy normalization (`∑ a, π_{θ'}(a | h_j) = 1`), the log-derivative score identity
+/-- A `T`-step trajectory rollout under a differentiable policy `π_θ` on a finite state/context
+space `H` and finite action space `A`, shared between Part 1 (`PolicyGradientVariance`) and Part 2
+(`PolicyGradientBaselines`). -/
+structure PolicyRollout [Fintype Ω] (μ : Measure Ω) (T : ℕ) (H A : Type*)
+    [DecidableEq H] [Fintype A] [DecidableEq A] where
+  /-- Conditioning context `h_t(τ) = (s_0, a_0, ..., s_t)` at step `t`. -/
+  hist : Fin T → Ω → H
+  /-- Action `a_t(τ)` taken at step `t`. -/
+  act : Fin T → Ω → A
+  /-- Parameterized policy `π_{θ'}(a | h_t)`. -/
+  π : E → Fin T → H → A → ℝ
+  /-- Policy gradient `∇_θ π_θ(a | h_t)` at parameter `θ`. -/
+  grad_π : Fin T → H → A → E
+  /-- Current policy parameter vector `θ ∈ E`. -/
+  θ : E
+  /-- Action probabilities under `π_θ` are non-zero. -/
+  hpos : ∀ t h a, π θ t h a ≠ 0
+  /-- Policy probabilities sum to 1 (`∑_a π_{θ'}(a | h_t) = 1`) for all `θ'`. -/
+  hnorm : ∀ t h θ', ∑ a : A, π θ' t h a = 1
+  /-- `grad_π` is the gradient of `θ' ↦ π_{θ'}(a | h_t)` at `θ`. -/
+  hgrad : ∀ t h a, HasGradientAt (fun θ' => π θ' t h a) (grad_π t h a) θ
+  /-- Action `a_j` is sampled from `π_θ(· | h_j)` given `h_j`:
+  `ℙ(h_j = h, a_j = a) = ℙ(h_j = h) · π_θ(a | h_j)`. -/
+  hpolicy : ∀ j h a,
+    (∑ τ ∈ Finset.univ.filter (fun τ : Ω => hist j τ = h ∧ act j τ = a), μ.real {τ}) =
+      (∑ τ ∈ Finset.univ.filter (fun τ : Ω => hist j τ = h), μ.real {τ}) * π θ j h a
+  /-- Causality: for `i < j`, the earlier step `(h_i, a_i)` is determined by `h_j`. -/
+  hadapt : ∀ i j : Fin T, i < j → ∃ f : H → H × A, ∀ τ, (hist i τ, act i τ) = f (hist j τ)
+
+omit [MeasurableSpace Ω] [CompleteSpace E] [IsProbabilityMeasure μ] in
+/-- Per-step score vector `P.score t τ = ∇_θ log π_θ(a_t | h_t)` of a `PolicyRollout`. -/
+def PolicyRollout.score [Fintype Ω] {T : ℕ} {H A : Type*} [DecidableEq H] [Fintype A] [DecidableEq A]
+    (P : PolicyRollout (E := E) μ T H A) (t : Fin T) (τ : Ω) : E :=
+  policyScore P.π P.grad_π P.θ P.hist P.act t τ
+
+omit [MeasurableSpace Ω] [CompleteSpace E] [IsProbabilityMeasure μ] in
+/-- Scalar per-step weights `w_t(τ)` are adapted to `P.hist` if for `i < j`, both `w_i(τ)` and
+`w_j(τ)` are determined by the conditioning context `P.hist j τ` at step `j`. -/
+def PolicyRollout.AdaptedWeight [Fintype Ω] {T : ℕ} {H A : Type*} [DecidableEq H] [Fintype A] [DecidableEq A]
+    (P : PolicyRollout (E := E) μ T H A) (w : Fin T → Ω → ℝ) : Prop :=
+  ∀ i j : Fin T, i < j → ∃ wi wj : H → ℝ,
+    ∀ τ, w i τ = wi (P.hist j τ) ∧ w j τ = wj (P.hist j τ)
+
+omit [CompleteSpace E] in
+/-- Shared orthogonality theorem for weighted score increments `w_t(τ) • P.score t τ`:
+combining policy normalization (`∑ a, π_{θ'}(a | h_j) = 1`), the log-derivative score identity
 (`finite_policy_score_zero_mean`, `eq:zero_score_mean`), the proved tower property
-(`tower_property`, `eq:tower_property`), and inner-product symmetry (`orthogonal_of_lt`) to prove
-that scores at all distinct time steps `i ≠ j` are uncorrelated (`eq:uncorrelated_scores`). -/
-lemma orthogonal_scores_of_finite_policy [Fintype Ω] [DiscreteMeasurableSpace Ω]
+(`tower_property`, `eq:tower_property`), and inner-product symmetry (`orthogonal_of_lt`) proves
+that `w_i(τ) • X_i(τ)` and `w_j(τ) • X_j(τ)` are uncorrelated for all `i ≠ j`. -/
+lemma PolicyRollout.orthogonal_smul [Fintype Ω] [DiscreteMeasurableSpace Ω]
     {T : ℕ} {H A : Type*} [Fintype H] [DecidableEq H] [Fintype A] [DecidableEq A]
-    (hist : Fin T → Ω → H) (act : Fin T → Ω → A)
-    (π : E → Fin T → H → A → ℝ) (grad_π : Fin T → H → A → E) (θ : E)
-    (hpos : ∀ t h a, π θ t h a ≠ 0)
-    (hnorm : ∀ t h θ', ∑ a : A, π θ' t h a = 1)
-    (hgrad : ∀ t h a, HasGradientAt (fun θ' => π θ' t h a) (grad_π t h a) θ)
-    (hpolicy : ∀ j h a,
-      (∑ τ ∈ Finset.univ.filter (fun τ : Ω => hist j τ = h ∧ act j τ = a), μ.real {τ}) =
-        (∑ τ ∈ Finset.univ.filter (fun τ : Ω => hist j τ = h), μ.real {τ}) * π θ j h a)
-    (hadapt : ∀ i j : Fin T, i < j →
-      ∃ f : H → H × A, ∀ τ, (hist i τ, act i τ) = f (hist j τ)) :
+    (P : PolicyRollout (E := E) μ T H A) (w : Fin T → Ω → ℝ)
+    (hw : P.AdaptedWeight w) :
     ∀ i j : Fin T, i ≠ j →
-      𝔼[τ ∂μ, ⟪policyScore π grad_π θ hist act i τ, policyScore π grad_π θ hist act j τ⟫_ℝ] = 0 := by
-  apply orthogonal_of_lt
+      𝔼[τ ∂μ, ⟪w i τ • P.score i τ, w j τ • P.score j τ⟫_ℝ] = 0 := by
+  apply orthogonal_of_lt (fun t τ => w t τ • P.score t τ)
   intro i j hij
-  rcases hadapt i j hij with ⟨f, hf⟩
-  let Xi_of_hj : H → E := fun h =>
-    (π θ i (f h).1 (f h).2)⁻¹ • grad_π i (f h).1 (f h).2
-  have hXi : ∀ τ, policyScore π grad_π θ hist act i τ = Xi_of_hj (hist j τ) := by
+  rcases P.hadapt i j hij with ⟨f, hf⟩
+  rcases hw i j hij with ⟨wi, wj, hwij⟩
+  let Yi_of_hj : H → E := fun h =>
+    wi h • ((P.π P.θ i (f h).1 (f h).2)⁻¹ • P.grad_π i (f h).1 (f h).2)
+  have hYi : ∀ τ, w i τ • P.score i τ = Yi_of_hj (P.hist j τ) := by
     intro τ
-    dsimp [policyScore, Xi_of_hj]
-    rw [← hf τ]
-  have heq : (fun τ => ⟪policyScore π grad_π θ hist act i τ,
-      policyScore π grad_π θ hist act j τ⟫_ℝ) =
-      fun τ => ⟪Xi_of_hj (hist j τ),
-        (π θ j (hist j τ) (act j τ))⁻¹ • grad_π j (hist j τ) (act j τ)⟫_ℝ := by
+    dsimp [PolicyRollout.score, policyScore, Yi_of_hj]
+    rw [(hwij τ).1, ← hf τ]
+  have hYj : ∀ τ, w j τ • P.score j τ =
+      wj (P.hist j τ) • ((P.π P.θ j (P.hist j τ) (P.act j τ))⁻¹ •
+        P.grad_π j (P.hist j τ) (P.act j τ)) := by
+    intro τ
+    dsimp [PolicyRollout.score, policyScore]
+    rw [(hwij τ).2]
+  have heq : (fun τ => ⟪w i τ • P.score i τ, w j τ • P.score j τ⟫_ℝ) =
+      fun τ => ⟪Yi_of_hj (P.hist j τ),
+        wj (P.hist j τ) • ((P.π P.θ j (P.hist j τ) (P.act j τ))⁻¹ •
+          P.grad_π j (P.hist j τ) (P.act j τ))⟫_ℝ := by
     ext τ
-    rw [hXi τ]
-    rfl
-  rw [heq, tower_property (hist j) (act j) (π θ j)
-    (fun h a => ⟪Xi_of_hj h, (π θ j h a)⁻¹ • grad_π j h a⟫_ℝ) (hpolicy j)]
+    rw [hYi τ, hYj τ]
+  rw [heq, tower_property (P.hist j) (P.act j) (P.π P.θ j)
+    (fun h a => ⟪Yi_of_hj h, wj h • ((P.π P.θ j h a)⁻¹ • P.grad_π j h a)⟫_ℝ) (P.hpolicy j)]
   refine Finset.sum_eq_zero fun h _ => ?_
-  have hinner_sum : (∑ a : A, π θ j h a * ⟪Xi_of_hj h, (π θ j h a)⁻¹ • grad_π j h a⟫_ℝ) =
-      ⟪Xi_of_hj h, ∑ a : A, π θ j h a • ((π θ j h a)⁻¹ • grad_π j h a)⟫_ℝ := by
-    rw [inner_sum]
+  have hinner_sum : (∑ a : A, P.π P.θ j h a *
+      ⟪Yi_of_hj h, wj h • ((P.π P.θ j h a)⁻¹ • P.grad_π j h a)⟫_ℝ) =
+      wj h * ⟪Yi_of_hj h, ∑ a : A, P.π P.θ j h a • ((P.π P.θ j h a)⁻¹ • P.grad_π j h a)⟫_ℝ := by
+    rw [inner_sum, Finset.mul_sum]
     refine Finset.sum_congr rfl fun a _ => ?_
     simp only [real_inner_smul_right]
-  rw [hinner_sum, finite_policy_score_zero_mean (fun θ' a => π θ' j h a) (grad_π j h) θ
-    (hpos j h) (hnorm j h) (hgrad j h), inner_zero_right, mul_zero]
+    ring
+  rw [hinner_sum, finite_policy_score_zero_mean (fun θ' a => P.π θ' j h a) (P.grad_π j h) P.θ
+    (P.hpos j h) (P.hnorm j h) (P.hgrad j h), inner_zero_right, mul_zero, mul_zero]
+
+omit [CompleteSpace E] in
+/-- Unweighted per-step scores `P.score i` and `P.score j` at distinct time steps `i ≠ j` are
+uncorrelated (`eq:uncorrelated_scores`), obtained as the `w ≡ 1` specialization of
+`PolicyRollout.orthogonal_smul`. -/
+lemma orthogonal_scores_of_finite_policy [Fintype Ω] [DiscreteMeasurableSpace Ω]
+    {T : ℕ} {H A : Type*} [Fintype H] [DecidableEq H] [Fintype A] [DecidableEq A]
+    (P : PolicyRollout (E := E) μ T H A) :
+    ∀ i j : Fin T, i ≠ j → 𝔼[τ ∂μ, ⟪P.score i τ, P.score j τ⟫_ℝ] = 0 := by
+  have h1 := P.orthogonal_smul (fun _ _ => (1 : ℝ))
+    (fun _ _ _ => ⟨fun _ => 1, fun _ => 1, fun _ => ⟨rfl, rfl⟩⟩)
+  simpa [one_smul] using h1
 
 omit [CompleteSpace E] [IsProbabilityMeasure μ] in
 /-- Equation `eq:per_step_decomp`: uncorrelated score increments (`E[⟪X_i, X_j⟫] = 0` for `i ≠ j`)
@@ -353,47 +410,31 @@ theorem reinforce_variance_bound {T : ℕ} (X : Fin T → Ω → E) (R : Ω → 
     -- Combine factors: `(T r_max)² (T C) = T³ r_max² C`
     _ = (T : ℝ) ^ 3 * rmax ^ 2 * C := by ring
 
-/-- Main theorem (`eq:variance_bound` in the blog post): for a differentiable policy `π_θ` with
-per-step score second moments bounded by `C` (`𝔼[‖X_t‖²] ≤ C`) and per-step rewards bounded by
+/-- Main theorem (`eq:variance_bound` in the blog post): for a differentiable policy rollout `P`
+with per-step score second moments bounded by `C` (`𝔼[‖X_t‖²] ≤ C`) and per-step rewards bounded by
 `r_max` (`|r_t(τ)| ≤ r_max`), the total variance of the REINFORCE estimator satisfies
 `Var(ĝ) ≤ T³ r_max² C`. -/
 theorem reinforce_variance_bound_of_rewards
-    [Fintype Ω] [DiscreteMeasurableSpace Ω]                  -- Finite trajectory space `Ω`
-    {T : ℕ}                                                  -- Horizon length `T` (number of time steps in a trajectory)
-    {H A : Type*} [Fintype H] [DecidableEq H]                -- Finite state/history space `H` and
-    [Fintype A] [DecidableEq A]                              -- finite action space `A`
-    (hist : Fin T → Ω → H)                                   -- Trajectory history `h_t(τ) = (s_0, a_0, ..., s_t)` up to step `t`
-    (act : Fin T → Ω → A)                                    -- Action `a_t(τ)` taken at step `t`
-    (π : E → Fin T → H → A → ℝ)                              -- Parameterized policy `π_{θ'}(a | h_t)`
-    (grad_π : Fin T → H → A → E)                             -- Policy gradient `∇_θ π_θ(a | h_t)` at parameter `θ`
-    (θ : E)                                                  -- Current policy parameter vector `θ ∈ E`
+    [Fintype Ω] [DiscreteMeasurableSpace Ω]
+    {T : ℕ} {H A : Type*} [Fintype H] [DecidableEq H] [Fintype A] [DecidableEq A]
+    (P : PolicyRollout (E := E) μ T H A)                     -- Differentiable policy rollout over `T` steps
     (r : Fin T → Ω → ℝ)                                      -- Per-step scalar rewards `r_t(τ) ∈ ℝ`
     (rmax C : ℝ)                                             -- Constants `r_max` (reward bound) and `C` (score second-moment bound)
-    (hpos : ∀ t h a, π θ t h a ≠ 0)                          -- Action probabilities under `π_θ` are non-zero
-    (hnorm : ∀ t h θ', ∑ a : A, π θ' t h a = 1)              -- Policy probabilities sum to 1 (`∑_a π_{θ'}(a | h_t) = 1`) for all `θ'`
-    (hgrad : ∀ t h a, HasGradientAt (fun θ' => π θ' t h a) (grad_π t h a) θ) -- `grad_π` is the gradient of `θ' ↦ π_{θ'}(a | h_t)` at `θ`
-    (hpolicy : ∀ j h a,                                      -- Action `a_j` is sampled from `π_θ(· | h_j)` given history `h_j`:
-      (∑ τ ∈ Finset.univ.filter (fun τ : Ω => hist j τ = h ∧ act j τ = a), μ.real {τ}) =
-        (∑ τ ∈ Finset.univ.filter (fun τ : Ω => hist j τ = h), μ.real {τ}) * π θ j h a)
-    (hadapt : ∀ i j : Fin T, i < j →                         -- Causality: for `i < j`, the earlier step `(h_i, a_i)` is determined
-      ∃ f : H → H × A, ∀ τ, (hist i τ, act i τ) = f (hist j τ)) -- by the history `h_j` up to step `j`
-    (hsecond : ∀ t, 𝔼[τ ∂μ, ‖policyScore π grad_π θ hist act t τ‖ ^ 2] ≤ C) -- Bounded score second moment (`𝔼[‖X_t‖²] ≤ C`)
+    (hsecond : ∀ t, 𝔼[τ ∂μ, ‖P.score t τ‖ ^ 2] ≤ C)          -- Bounded score second moment (`𝔼[‖X_t‖²] ≤ C`)
     (hr : ∀ τ t, |r t τ| ≤ rmax) :                           -- Bounded per-step rewards (`|r_t(τ)| ≤ r_max` for all `t`)
-    totalVariance μ (reinforceEstimator (policyScore π grad_π θ hist act) r) -- Conclusion: total variance `Var(ĝ)`
+    totalVariance μ (reinforceEstimator P.score r)           -- Conclusion: total variance `Var(ĝ)` of the REINFORCE estimator
       ≤ (T : ℝ) ^ 3 * rmax ^ 2 * C := by                     -- is bounded above by `T³ r_max² C`
-  -- Let `X_t(τ) = ∇_θ log π_θ(a_t | h_t)` be the per-step score vector (`policyScore`)
-  let X := policyScore π grad_π θ hist act
   -- Step 1️⃣ (`eq:zero_score_mean` – `eq:uncorrelated_scores`): prove that scores at distinct
   -- steps `i ≠ j` are uncorrelated (`𝔼[⟪X_i, X_j⟫] = 0`) by differentiating `∑_a π_θ(a | h_j) = 1`
   -- (`finite_policy_score_zero_mean`) and conditioning on `h_j` via the tower property (`tower_property`)
-  have horth : ∀ i j, i ≠ j → 𝔼[τ ∂μ, ⟪X i τ, X j τ⟫_ℝ] = 0 :=
-    orthogonal_scores_of_finite_policy hist act π grad_π θ hpos hnorm hgrad hpolicy hadapt
+  have horth : ∀ i j, i ≠ j → 𝔼[τ ∂μ, ⟪P.score i τ, P.score j τ⟫_ℝ] = 0 :=
+    orthogonal_scores_of_finite_policy P
   -- Factor the scalar return `R(τ) = ∑_t r_t(τ)` out of the sum: `ĝ(τ) = R(τ) • ∑_t X_t(τ)` (`eq:reinforce`)
-  rw [show reinforceEstimator X r = fun τ => trajectoryReturn r τ • scoreSum X τ from
-    funext (reinforceEstimator_eq_smul_scoreSum X r)]
+  rw [show reinforceEstimator P.score r = fun τ => trajectoryReturn r τ • scoreSum P.score τ from
+    funext (reinforceEstimator_eq_smul_scoreSum P.score r)]
   -- Step 3️⃣ (`eq:variance_split`): combine Step 1️⃣ (`horth` → Pythagorean identity `eq:per_step_decomp`)
   -- with the score second-moment bound `𝔼[‖X_t‖²] ≤ C` (`hsecond`)
-  apply reinforce_variance_bound X (trajectoryReturn r) rmax C
+  apply reinforce_variance_bound P.score (trajectoryReturn r) rmax C
     (fun _ => MemLp.of_discrete) horth hsecond AEStronglyMeasurable.of_discrete
   -- Step 2️⃣ (`eq:return_bound`): bound the total return `|R(τ)| = |∑_t r_t(τ)| ≤ T r_max` from `|r_t(τ)| ≤ r_max`
   exact Eventually.of_forall fun τ => return_abs_bound (fun t => r t τ) rmax (hr τ)

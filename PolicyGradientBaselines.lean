@@ -237,62 +237,16 @@ lemma sum_horizon_remaining_le_sq (T : ℕ) :
     _ = (T : ℝ) ^ 2 := by simp [sq]
 
 omit [CompleteSpace E] in
-/-- Combine policy normalization (`∑ a, π_{θ'}(a | h_j) = 1`), the log-derivative score identity
-(`finite_policy_score_zero_mean`), the proved tower property (`tower_property`), and inner-product
-symmetry (`orthogonal_of_lt`) from Part 1 to prove that the centered per-step gradient contributions
-`Y_i, Y_j` at distinct time steps `i ≠ j` are uncorrelated (`𝔼[⟪Y_i, Y_j⟫] = 0`). -/
+/-- Centered per-step gradient contributions `Y_i, Y_j` (`i ≠ j`) are uncorrelated
+(`𝔼[⟪Y_i, Y_j⟫] = 0`), obtained immediately from `PolicyRollout.orthogonal_smul` (Part 1)
+with scalar weights `w_t(τ) = G_t(τ) - b_t(τ)`. -/
 lemma orthogonal_baselineSteps_of_finite_policy [Fintype Ω] [DiscreteMeasurableSpace Ω]
     {T : ℕ} {H A : Type*} [Fintype H] [DecidableEq H] [Fintype A] [DecidableEq A]
-    (hist : Fin T → Ω → H) (act : Fin T → Ω → A)
-    (π : E → Fin T → H → A → ℝ) (grad_π : Fin T → H → A → E) (θ : E)
-    (G b : Fin T → Ω → ℝ)
-    (hpos : ∀ t h a, π θ t h a ≠ 0)
-    (hnorm : ∀ t h θ', ∑ a : A, π θ' t h a = 1)
-    (hgrad : ∀ t h a, HasGradientAt (fun θ' => π θ' t h a) (grad_π t h a) θ)
-    (hpolicy : ∀ j h a,
-      (∑ τ ∈ Finset.univ.filter (fun τ : Ω => hist j τ = h ∧ act j τ = a), μ.real {τ}) =
-        (∑ τ ∈ Finset.univ.filter (fun τ : Ω => hist j τ = h), μ.real {τ}) * π θ j h a)
-    (hadapt : ∀ i j : Fin T, i < j →
-      ∃ (f : H → H × A) (gi gj : H → ℝ), ∀ τ,
-        (hist i τ, act i τ) = f (hist j τ) ∧
-        G i τ - b i τ = gi (hist j τ) ∧
-        G j τ - b j τ = gj (hist j τ)) :
+    (P : PolicyRollout (E := E) μ T H A) (G b : Fin T → Ω → ℝ)
+    (hadapt : P.AdaptedWeight (fun t τ => G t τ - b t τ)) :
     ∀ i j : Fin T, i ≠ j →
-      𝔼[τ ∂μ, ⟪baselineStep (policyScore π grad_π θ hist act) G b i τ,
-        baselineStep (policyScore π grad_π θ hist act) G b j τ⟫_ℝ] = 0 := by
-  apply orthogonal_of_lt
-  intro i j hij
-  rcases hadapt i j hij with ⟨f, gi, gj, hfg⟩
-  let Yi_of_hj : H → E := fun h =>
-    gi h • ((π θ i (f h).1 (f h).2)⁻¹ • grad_π i (f h).1 (f h).2)
-  have hYi : ∀ τ, baselineStep (policyScore π grad_π θ hist act) G b i τ = Yi_of_hj (hist j τ) := by
-    intro τ
-    obtain ⟨hf, hgi, _⟩ := hfg τ
-    dsimp [baselineStep, policyScore, Yi_of_hj]
-    rw [hgi, ← hf]
-  have hYj : ∀ τ, baselineStep (policyScore π grad_π θ hist act) G b j τ =
-      gj (hist j τ) • ((π θ j (hist j τ) (act j τ))⁻¹ • grad_π j (hist j τ) (act j τ)) := by
-    intro τ
-    obtain ⟨_, _, hgj⟩ := hfg τ
-    dsimp [baselineStep, policyScore]
-    rw [hgj]
-  have heq : (fun τ => ⟪baselineStep (policyScore π grad_π θ hist act) G b i τ,
-      baselineStep (policyScore π grad_π θ hist act) G b j τ⟫_ℝ) =
-      fun τ => ⟪Yi_of_hj (hist j τ),
-        gj (hist j τ) • ((π θ j (hist j τ) (act j τ))⁻¹ • grad_π j (hist j τ) (act j τ))⟫_ℝ := by
-    ext τ
-    rw [hYi τ, hYj τ]
-  rw [heq, tower_property (hist j) (act j) (π θ j)
-    (fun h a => ⟪Yi_of_hj h, gj h • ((π θ j h a)⁻¹ • grad_π j h a)⟫_ℝ) (hpolicy j)]
-  refine Finset.sum_eq_zero fun h _ => ?_
-  have hinner_sum : (∑ a : A, π θ j h a * ⟪Yi_of_hj h, gj h • ((π θ j h a)⁻¹ • grad_π j h a)⟫_ℝ) =
-      gj h * ⟪Yi_of_hj h, ∑ a : A, π θ j h a • ((π θ j h a)⁻¹ • grad_π j h a)⟫_ℝ := by
-    rw [inner_sum, Finset.mul_sum]
-    refine Finset.sum_congr rfl fun a _ => ?_
-    simp only [real_inner_smul_right]
-    ring
-  rw [hinner_sum, finite_policy_score_zero_mean (fun θ' a => π θ' j h a) (grad_π j h) θ
-    (hpos j h) (hnorm j h) (hgrad j h), inner_zero_right, mul_zero, mul_zero]
+      𝔼[τ ∂μ, ⟪baselineStep P.score G b i τ, baselineStep P.score G b j τ⟫_ℝ] = 0 :=
+  P.orthogonal_smul (fun t τ => G t τ - b t τ) hadapt
 
 /-- Core theorem corresponding to Equations `eq:baseline_variance_bound` and
 `eq:baseline_second_moment` in the blog post. Reuses `totalVariance_le_secondMoment` and
@@ -339,47 +293,28 @@ theorem baseline_variance_bound {T : ℕ} (X : Fin T → Ω → E) (G b : Fin T 
     _ = (T : ℝ) ^ 2 * Kr * C := by ring
 
 /-- Main theorem stated in the framed lemma of Part 2 (`eq:baseline_variance_bound`):
-for a differentiable policy `π_θ` with bounded per-step score norms `‖X_t(τ)‖² ≤ C`
+for a differentiable policy rollout `P` with bounded per-step score norms `‖X_t(τ)‖² ≤ C`
 (`eq:bounded_scores`) and centered return variance bounded by `(T - t) K_r`
 (`eq:return_variance_bound`), the total variance of the baseline estimator satisfies
 `Var(ĝ_b) ≤ T² K_r C`, where `K_r = r_max² + 2 M ρ / (1 - ρ)`. -/
 theorem baseline_variance_bound_of_return_variance
-    [Fintype Ω] [DiscreteMeasurableSpace Ω]                  -- Finite trajectory space `Ω`
-    {T : ℕ}                                                  -- Horizon length `T` (number of time steps in a trajectory)
-    {H A : Type*} [Fintype H] [DecidableEq H]                -- Finite state/context space `H` and
-    [Fintype A] [DecidableEq A]                              -- finite action space `A`
-    (hist : Fin T → Ω → H)                                   -- Conditioning context `h_t(τ)` at step `t`
-    (act : Fin T → Ω → A)                                    -- Action `a_t(τ)` taken at step `t`
-    (π : E → Fin T → H → A → ℝ)                              -- Parameterized policy `π_{θ'}(a | h_t)`
-    (grad_π : Fin T → H → A → E)                             -- Policy gradient `∇_θ π_θ(a | h_t)` at parameter `θ`
-    (θ : E)                                                  -- Current policy parameter vector `θ ∈ E`
-    (G : Fin T → Ω → ℝ)                                      -- Reward-to-go `G_t(τ) = ∑_{k=t}^{T-1} r_k(τ) ∈ ℝ` from step `t`
-    (b : Fin T → Ω → ℝ)                                      -- State-dependent baseline `b_t(τ) = b(s_t) ∈ ℝ` at step `t`
-    (rmax M ρ C : ℝ)                                         -- Constants `r_max` (reward bound), `M, ρ` (mixing parameters), and `C` (score bound)
-    (hpos : ∀ t h a, π θ t h a ≠ 0)                          -- Action probabilities under `π_θ` are non-zero
-    (hnorm : ∀ t h θ', ∑ a : A, π θ' t h a = 1)              -- Policy probabilities sum to 1 (`∑_a π_{θ'}(a | h_t) = 1`) for all `θ'`
-    (hgrad : ∀ t h a, HasGradientAt (fun θ' => π θ' t h a) (grad_π t h a) θ) -- `grad_π` is the gradient of `θ' ↦ π_{θ'}(a | h_t)` at `θ`
-    (hpolicy : ∀ j h a,                                      -- Action `a_j` is sampled from `π_θ(· | h_j)` given `h_j`:
-      (∑ τ ∈ Finset.univ.filter (fun τ : Ω => hist j τ = h ∧ act j τ = a), μ.real {τ}) =
-        (∑ τ ∈ Finset.univ.filter (fun τ : Ω => hist j τ = h), μ.real {τ}) * π θ j h a)
-    (hadapt : ∀ i j : Fin T, i < j →                         -- Conditioning on `h_j` (`i < j`) fixes `(h_i, a_i)` and the centered returns:
-      ∃ (f : H → H × A) (gi gj : H → ℝ), ∀ τ,
-        (hist i τ, act i τ) = f (hist j τ) ∧
-        G i τ - b i τ = gi (hist j τ) ∧
-        G j τ - b j τ = gj (hist j τ))
-    (hXbound : ∀ t τ, ‖policyScore π grad_π θ hist act t τ‖ ^ 2 ≤ C) -- Bounded score norm (`‖X_t(τ)‖² ≤ C`, `eq:bounded_scores`)
-    (hGvar : ∀ t : Fin T,                                    -- Step 1️⃣ (`eq:return_variance_bound`): centered return variance at step `t` is bounded
-      𝔼[τ ∂μ, (G t τ - b t τ) ^ 2] ≤ ((T - t.val : ℕ) : ℝ) * rewardVarianceConst rmax M ρ) : -- by `(T - t) K_r` over the remaining `T - t` steps
-    totalVariance μ (baselineEstimator (policyScore π grad_π θ hist act) G b) -- Conclusion: total variance `Var(ĝ_b)` of the baseline estimator
+    [Fintype Ω] [DiscreteMeasurableSpace Ω]
+    {T : ℕ} {H A : Type*} [Fintype H] [DecidableEq H] [Fintype A] [DecidableEq A]
+    (P : PolicyRollout (E := E) μ T H A)                     -- Differentiable policy rollout over `T` steps
+    (G b : Fin T → Ω → ℝ)                                    -- Reward-to-go `G_t` and state-dependent baseline `b_t`
+    (rmax M ρ C : ℝ)                                         -- Constants `r_max` (reward bound), `M, ρ` (mixing), and `C` (score bound)
+    (hadapt : P.AdaptedWeight (fun t τ => G t τ - b t τ))    -- Conditioning on `h_j` (`i < j`) fixes centered returns `G_i - b_i, G_j - b_j`
+    (hXbound : ∀ t τ, ‖P.score t τ‖ ^ 2 ≤ C)                 -- Bounded score norm (`‖X_t(τ)‖² ≤ C`, `eq:bounded_scores`)
+    (hGvar : ∀ t : Fin T,                                    -- Step 1️⃣ (`eq:return_variance_bound`): centered return variance bound
+      𝔼[τ ∂μ, (G t τ - b t τ) ^ 2] ≤ ((T - t.val : ℕ) : ℝ) * rewardVarianceConst rmax M ρ) :
+    totalVariance μ (baselineEstimator P.score G b)          -- Conclusion: total variance `Var(ĝ_b)` of the baseline estimator
       ≤ (T : ℝ) ^ 2 * rewardVarianceConst rmax M ρ * C := by -- is bounded above by `T² K_r C` (quadratic `O(T²)` scaling)
-  -- Let `X_t(τ) = ∇_θ log π_θ(a_t | h_t)` be the per-step score vector (`policyScore`)
-  let X := policyScore π grad_π θ hist act
   -- Prove that the centered per-step gradient contributions `Y_i, Y_j` (`i ≠ j`) are uncorrelated
-  -- (`𝔼[⟪Y_i, Y_j⟫] = 0`) using `tower_property` and `finite_policy_score_zero_mean` from Part 1
-  have horth : ∀ i j, i ≠ j → 𝔼[τ ∂μ, ⟪baselineStep X G b i τ, baselineStep X G b j τ⟫_ℝ] = 0 :=
-    orthogonal_baselineSteps_of_finite_policy hist act π grad_π θ G b hpos hnorm hgrad hpolicy hadapt
+  -- (`𝔼[⟪Y_i, Y_j⟫] = 0`) via `orthogonal_baselineSteps_of_finite_policy` (`PolicyRollout.orthogonal_smul`)
+  have horth : ∀ i j, i ≠ j → 𝔼[τ ∂μ, ⟪baselineStep P.score G b i τ, baselineStep P.score G b j τ⟫_ℝ] = 0 :=
+    orthogonal_baselineSteps_of_finite_policy P G b hadapt
   -- Step 3️⃣ (`eq:baseline_second_moment`): reduce the total variance bound to bounding each per-step second moment `𝔼[‖Y_t‖²]`
-  apply baseline_variance_bound X G b (rewardVarianceConst rmax M ρ) C
+  apply baseline_variance_bound P.score G b (rewardVarianceConst rmax M ρ) C
     (fun _ => MemLp.of_discrete) horth
   intro t
   -- Deduce `0 ≤ C` from `0 ≤ ‖X_t(τ₀)‖² ≤ C` on the non-empty probability space `(Ω, μ)`
@@ -388,7 +323,7 @@ theorem baseline_variance_bound_of_return_variance
     exact (sq_nonneg _).trans (hXbound t τ₀)
   -- Step 2️⃣ (`eq:per_step_moment_bound`): combine `‖X_t‖² ≤ C` (`hXbound`) with `𝔼[(G_t - b_t)²] ≤ (T - t) K_r` (`hGvar`)
   -- to obtain `𝔼[‖Y_t‖²] ≤ (T - t) K_r C`
-  exact baselineStep_secondMoment_bound X G b (rewardVarianceConst rmax M ρ) C hC t
+  exact baselineStep_secondMoment_bound P.score G b (rewardVarianceConst rmax M ρ) C hC t
     MemLp.of_discrete MemLp.of_discrete (Eventually.of_forall (hXbound t)) (hGvar t)
 
 end PolicyGradient
